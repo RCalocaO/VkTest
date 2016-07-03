@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "Test0.h"
+#include "../vk/Vk.h"
 
 #define MAX_LOADSTRING 100
 
@@ -105,6 +106,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
       return FALSE;
    }
 
+	DoInit(hInstance, hWnd);
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
 
@@ -123,6 +125,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	static bool bDestroyed = false;
     switch (message)
     {
     case WM_COMMAND:
@@ -144,13 +147,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_PAINT:
         {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
+			if (!bDestroyed)
+			{
+				DoRender();
+			}
+            //PAINTSTRUCT ps;
+            //HDC hdc = BeginPaint(hWnd, &ps);
             // TODO: Add any drawing code that uses hdc here...
-            EndPaint(hWnd, &ps);
+            //EndPaint(hWnd, &ps);
         }
         break;
-    case WM_DESTROY:
+    case WM_SIZE:
+		// Resize the application to the new window size, except when
+		// it was minimized. Vulkan doesn't support images or swapchains
+		// with width=0 and height=0.
+		if (wParam != SIZE_MINIMIZED)
+		{
+			int width = lParam & 0xffff;
+			int height = lParam & 0xffff0000 >> 16;
+			DoResize(width, height);
+		}
+		break;
+	case WM_DESTROY:
+		bDestroyed = true;
+		DoDeinit();
         PostQuitMessage(0);
         break;
     default:
