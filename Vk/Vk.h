@@ -6,22 +6,18 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <list>
+#include <map>
 
 typedef uint32_t uint32;
 typedef int32_t int32;
+typedef uint64_t uint64;
+typedef int64_t int64;
 
-__forceinline void check(bool Condition)
-{
-	if (!Condition)
-	{
-		__debugbreak();
-	}
-}
+#define check(x) if (!(x)) __debugbreak();
 
-__forceinline void checkVk(VkResult Result)
-{
-	check(Result == VK_SUCCESS);
-}
+#define checkVk(r) check((r) == VK_SUCCESS)
+
 
 template <typename T>
 inline void MemZero(T& Struct)
