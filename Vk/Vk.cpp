@@ -3,7 +3,7 @@
 #include "stdafx.h"
 #include "Vk.h"
 
-static bool GSkipValidation = !false;
+static bool GSkipValidation = false;
 
 static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, std::vector<const char*>& OutExtensions)
 {
@@ -195,6 +195,7 @@ struct FCmdBuffer
 		Beginned,
 		Ended,
 		Submitted,
+		InsideRenderPass,
 	};
 
 	EState State = EState::ReadyForBegin;
@@ -240,6 +241,17 @@ struct FCmdBuffer
 		check(State == EState::Beginned);
 		checkVk(vkEndCommandBuffer(CmdBuffer));
 		State = EState::Ended;
+	}
+
+	void BeginRenderPass(VkRenderPass RenderPass, const struct FFramebuffer& Framebuffer);
+
+	void EndRenderPass()
+	{
+		check(State == EState::InsideRenderPass);
+
+		vkCmdEndRenderPass(CmdBuffer);
+
+		State = EState::Beginned;
 	}
 
 	void WaitForFence()
@@ -525,14 +537,25 @@ struct FInstance
 		const char* Message,
 		void* UserData)
 	{
-		if (Flags)
+		char s[2048];
+		int n = 0;
+		if (Flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
 		{
+			sprintf_s(s, "<VK>Error: %s\n", Message);
+			++n;
+		}
+		else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
+		{
+			sprintf_s(s, "<VK>Warn: %s\n", Message);
+			++n;
+		}
+		else
+		{
+			sprintf_s(s, "<VK>: %s\n", Message);
 		}
 
-		char s[256];
-		sprintf_s(s, "VK: %s\n", Message);
 		::OutputDebugStringA(s);
-		return true;
+		return false;
 	}
 
 	void CreateDebugCallback()
@@ -871,6 +894,7 @@ struct FSwapchain
 			vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, Buffer.Buffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
 */
 
+/*
 			VkImageMemoryBarrier TransferToPresentBarrier;
 			MemZero(TransferToPresentBarrier);
 			TransferToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -884,6 +908,8 @@ struct FSwapchain
 			TransferToPresentBarrier.subresourceRange.layerCount = 1;
 			TransferToPresentBarrier.subresourceRange.levelCount = 1;
 			vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
+*/
+
 		}
 	}
 
@@ -921,50 +947,70 @@ struct FSwapchain
 FSwapchain GSwapchain;
 
 
-
-
-
-void DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
+struct FFramebuffer : public FRecyclableResource
 {
-	GInstance.Create(hInstance, hWnd);
-	GInstance.CreateDevice();
+	VkFramebuffer Framebuffer = VK_NULL_HANDLE;
+	VkDevice Device = VK_NULL_HANDLE;
 
-	GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
+	void CreateColorOnly(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, uint32 InWidth, uint32 InHeight)
+	{
+		Device = InDevice;
+		Width = InWidth;
+		Height = InHeight;
 
-	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
+		VkFramebufferCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		CreateInfo.renderPass = RenderPass;
+		CreateInfo.attachmentCount = 1;
+		CreateInfo.pAttachments = &ColorAttachment;
+		CreateInfo.width = Width;
+		CreateInfo.height = Height;
+		CreateInfo.layers = 1;
 
-	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
-	CmdBuffer->Begin();
-	GSwapchain.TransitionToPresent(CmdBuffer);
-	CmdBuffer->End();
-	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
-	CmdBuffer->WaitForFence();
+		checkVk(vkCreateFramebuffer(Device, &CreateInfo, nullptr, &Framebuffer));
+	}
 
-#if 0
+	void Destroy()
+	{
+		vkDestroyFramebuffer(Device, Framebuffer, nullptr);
+		Framebuffer = VK_NULL_HANDLE;
+	}
 
-	CreateDescriptorLayouts();
-	CreatePipelineLayouts();
+	uint32 Width = 0;
+	uint32 Height = 0;
+};
 
-	CreateRenderPass();
 
-	CreatePipeline();
+void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer)
+{
+	check(State == EState::Beginned);
 
-	CreateFramebuffers();
-#endif
+	static uint32 N = 0;
+	N = (N  + 1) % 256;
+
+	VkClearValue ClearValues[] = { { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
+	VkRenderPassBeginInfo BeginInfo = {};
+	BeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	BeginInfo.renderPass = RenderPass;
+	BeginInfo.framebuffer = Framebuffer.Framebuffer;
+	BeginInfo.renderArea = { 0, 0, Framebuffer.Width, Framebuffer.Height };
+	BeginInfo.clearValueCount = 1;
+	BeginInfo.pClearValues = ClearValues;
+	vkCmdBeginRenderPass(CmdBuffer, &BeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	State = EState::InsideRenderPass;
 }
 
-void DoRender()
+struct FRenderPass : public FRecyclableResource
 {
-	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
-	CmdBuffer->Begin();
+	VkRenderPass RenderPass = VK_NULL_HANDLE;
+	VkDevice Device = VK_NULL_HANDLE;
 
-	FSemaphore RenderDone;
-	RenderDone.Create(GDevice.Device);
-
-	GSwapchain.AcquireNextImage();
-
-	VkRenderPass RenderPass;
+	void Create(VkDevice InDevice)
 	{
+		Device = InDevice;
+
 		VkAttachmentDescription ColorAttachmentDesc;
 		MemZero(ColorAttachmentDesc);
 		ColorAttachmentDesc.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -995,15 +1041,92 @@ void DoRender()
 		RenderPassInfo.subpassCount = 1;
 		RenderPassInfo.pSubpasses = &Subpass;
 
-		checkVk(vkCreateRenderPass(GDevice.Device, &RenderPassInfo, nullptr, &RenderPass));
+		checkVk(vkCreateRenderPass(Device, &RenderPassInfo, nullptr, &RenderPass));
 	}
+
+	void Destroy()
+	{
+		vkDestroyRenderPass(Device, RenderPass, nullptr);
+		RenderPass = VK_NULL_HANDLE;
+	}
+};
+
+
+static void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
+{
+	VkImageMemoryBarrier TransferToPresentBarrier;
+	MemZero(TransferToPresentBarrier);
+	TransferToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	TransferToPresentBarrier.srcAccessMask = SrcMask;
+	TransferToPresentBarrier.dstAccessMask = DstMask;// VK_ACCESS_MEMORY_READ_BIT;
+	TransferToPresentBarrier.oldLayout = SrcLayout;//VK_IMAGE_LAYOUT_UNDEFINED;
+	TransferToPresentBarrier.newLayout = DestLayout;//VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	TransferToPresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	TransferToPresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	TransferToPresentBarrier.image = Image;
+	TransferToPresentBarrier.subresourceRange.aspectMask = AspectMask;// VK_IMAGE_ASPECT_COLOR_BIT;
+	TransferToPresentBarrier.subresourceRange.layerCount = 1;
+	TransferToPresentBarrier.subresourceRange.levelCount = 1;
+	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
+}
+
+void DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
+{
+	GInstance.Create(hInstance, hWnd);
+	GInstance.CreateDevice();
+
+	GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
+
+	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
+
+	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	CmdBuffer->Begin();
+	GSwapchain.TransitionToPresent(CmdBuffer);
+	CmdBuffer->End();
+	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	CmdBuffer->WaitForFence();
+
+#if 0
+
+	CreateDescriptorLayouts();
+	CreatePipelineLayouts();
+
+	CreatePipeline();
+
+	CreateFramebuffers();
+#endif
+}
+
+void DoRender()
+{
+	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
+	CmdBuffer->Begin();
+
+	FSemaphore RenderDone;
+	RenderDone.Create(GDevice.Device);
+
+	GSwapchain.AcquireNextImage();
+
+	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+	FRenderPass RenderPass;
+	RenderPass.Create(GDevice.Device);
+
+	FFramebuffer FB;
+	FB.CreateColorOnly(GDevice.Device, RenderPass.RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+
+	CmdBuffer->BeginRenderPass(RenderPass.RenderPass, FB);
+	CmdBuffer->EndRenderPass();
+
+	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	CmdBuffer->End();
 	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, &GSwapchain.AcquiredSemaphores[GSwapchain.AcquiredSemaphoreIndex], &RenderDone);
 
 	GSwapchain.Present(GDevice.PresentQueue, &RenderDone);
 
-	vkDestroyRenderPass(GDevice.Device, RenderPass, nullptr);
+	FB.Destroy();
+	RenderPass.Destroy();
 
 	RenderDone.Destroy(GDevice.Device);
 }
