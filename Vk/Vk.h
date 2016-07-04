@@ -31,7 +31,7 @@ inline void MemZero(T& Struct)
 
 
 
-void DoInit(HINSTANCE hInstance, HWND hWnd);
+void DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height);
 void DoRender();
 void DoResize(int32 Width, int32 Height);
 void DoDeinit();

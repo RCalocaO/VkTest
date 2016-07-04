@@ -106,7 +106,12 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
       return FALSE;
    }
 
-	DoInit(hInstance, hWnd);
+   RECT Rect;
+   GetWindowRect(hWnd, &Rect);
+
+   uint32 Width = Rect.right - Rect.left;
+   uint32 Height = Rect.bottom - Rect.top;
+	DoInit(hInstance, hWnd, Width, Height);
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
 
