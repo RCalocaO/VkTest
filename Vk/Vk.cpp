@@ -55,8 +55,39 @@ static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, 
 }
 
 
-std::vector<char> GVertexShader;
-std::vector<char> GPixelShader;
+struct FShader
+{
+	bool Create(const char* Filename, VkDevice Device)
+	{
+		SpirV = LoadFile(Filename);
+		if (SpirV.empty())
+		{
+			return false;
+		}
+
+		VkShaderModuleCreateInfo ShaderCreationInfo;
+		MemZero(ShaderCreationInfo);
+		ShaderCreationInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		check(SpirV.size() % 4 == 0);
+		ShaderCreationInfo.codeSize = SpirV.size();
+		ShaderCreationInfo.pCode = (uint32*)&SpirV[0];
+
+		checkVk(vkCreateShaderModule(Device, &ShaderCreationInfo, nullptr, &ShaderModule));
+
+		return true;
+	}
+
+	void Destroy(VkDevice Device)
+	{
+		vkDestroyShaderModule(Device, ShaderModule, nullptr);
+		ShaderModule = VK_NULL_HANDLE;
+	}
+
+	std::vector<char> SpirV;
+	VkShaderModule ShaderModule;
+};
+static FShader GVertexShader;
+static FShader GPixelShader;
 
 
 struct FDevice
@@ -1101,50 +1132,49 @@ static void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout 
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
 }
 
-std::vector<char> LoadFile(const char* Filename)
-{
-	std::vector<char> Data;
-
-	FILE* File = nullptr;
-	fopen_s(&File, Filename, "rb");
-	fseek(File, 0, SEEK_END);
-	auto Size = ftell(File);
-	fseek(File, 0, SEEK_SET);
-	Data.resize(Size);
-	fread(&Data[0], 1, Size, File);
-	fclose(File);
-
-	return Data;
-}
-
 static bool LoadShaders()
 {
-	char SDKDir[MAX_PATH];
-	::GetEnvironmentVariableA("VULKAN_SDK", SDKDir, MAX_PATH - 1);
-	char Glslang[MAX_PATH];
-	sprintf_s(Glslang, "%s\\Bin\\glslangValidator.exe", SDKDir);
+	static bool bDoCompile = !false;
+	if (bDoCompile)
 	{
-		std::string CompileVS = Glslang;
-		CompileVS += " -G -H ../Shaders/Test0.vert";
-		if (system(CompileVS.c_str()))
+		// Compile the shaders
+		char SDKDir[MAX_PATH];
+		::GetEnvironmentVariableA("VULKAN_SDK", SDKDir, MAX_PATH - 1);
+		char Glslang[MAX_PATH];
+		sprintf_s(Glslang, "%s\\Bin\\glslangValidator.exe", SDKDir);
+
+#define CMD_LINE " -V -r -H -l "
 		{
-			return false;
+			std::string CompileVS = Glslang;
+			CompileVS += CMD_LINE " ../Shaders/Test0.vert";
+			if (system(CompileVS.c_str()))
+			{
+				return false;
+			}
 		}
+
+		{
+			std::string CompilePS = Glslang;
+			CompilePS += CMD_LINE  " ../Shaders/Test0.frag";
+			if (system(CompilePS.c_str()))
+			{
+				return false;
+			}
+		}
+#undef CMD_LINE
 	}
 
+	if (!GVertexShader.Create("vert.spv", GDevice.Device))
 	{
-		std::string CompilePS = Glslang;
-		CompilePS += " -G -H ../Shaders/Test0.frag";
-		if (system(CompilePS.c_str()))
-		{
-			return false;
-		}
+		return false;
 	}
 
-	GVertexShader = LoadFile("vert.spv");
-	GPixelShader = LoadFile("frag.spv");
+	if (!GPixelShader.Create("frag.spv", GDevice.Device))
+	{
+		return false;
+	}
 
-	return !GVertexShader.empty() && !GPixelShader.empty();
+	return true;
 }
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
@@ -1226,6 +1256,9 @@ void DoResize(uint32 Width, uint32 Height)
 
 void DoDeinit()
 {
+	GPixelShader.Destroy(GDevice.Device);
+	GVertexShader.Destroy(GDevice.Device);
+
 	GCmdBufferMgr.Destroy();
 
 	GSwapchain.Destroy();

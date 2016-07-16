@@ -25,6 +25,21 @@ inline void MemZero(T& Struct)
 	ZeroMemory(&Struct, sizeof(T));
 }
 
+inline std::vector<char> LoadFile(const char* Filename)
+{
+	std::vector<char> Data;
+
+	FILE* File = nullptr;
+	fopen_s(&File, Filename, "rb");
+	fseek(File, 0, SEEK_END);
+	auto Size = ftell(File);
+	fseek(File, 0, SEEK_SET);
+	Data.resize(Size);
+	fread(&Data[0], 1, Size, File);
+	fclose(File);
+
+	return Data;
+}
 
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height);

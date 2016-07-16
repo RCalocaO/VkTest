@@ -1,4 +1,8 @@
 #version 420
+
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_shading_language_420pack : enable
+
 /*
 float4 Main(float4 Pos : POSITION) : SV_POSITION
 {
@@ -6,13 +10,9 @@ float4 Main(float4 Pos : POSITION) : SV_POSITION
 }
 */
 
-in vec4 position;
-
-out gl_PerVertex {
-    vec4  gl_Position;
-};
+layout (location = 0) in vec4 Position;
 
 void main()
 {
-	gl_Position = position;
+	gl_Position = Position;
 }
