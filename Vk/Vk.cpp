@@ -135,11 +135,16 @@ struct FFence : public FRecyclableResource
 		Fence = VK_NULL_HANDLE;
 	}
 
-	void Wait()
+	void Wait(uint64 TimeInNanoseconds = 0xffffffff)
 	{
 		check(State == EState::NotSignaled);
-		checkVk(vkWaitForFences(Device, 1, &Fence, true, 0xffffffff));
+		checkVk(vkWaitForFences(Device, 1, &Fence, true, TimeInNanoseconds));
 		RefreshState();
+	}
+
+	bool IsNotSignaled() const
+	{
+		return State == EState::NotSignaled;
 	}
 
 	void RefreshState()
@@ -218,6 +223,16 @@ struct FCmdBuffer
 
 	void Destroy(VkDevice Device, VkCommandPool Pool)
 	{
+		if (State == EState::Submitted)
+		{
+			RefreshState();
+			if (Fence.IsNotSignaled())
+			{
+				const uint64 TimeToWaitInNanoseconds = 5;
+				Fence.Wait(TimeToWaitInNanoseconds);
+			}
+			RefreshState();
+		}
 		Fence.Destroy(Device);
 		vkFreeCommandBuffers(Device, Pool, 1, &CmdBuffer);
 		CmdBuffer = VK_NULL_HANDLE;
@@ -403,6 +418,7 @@ struct FCmdBufferMgr
 	{
 		for (auto* CB : CmdBuffers)
 		{
+			CB->RefreshState();
 			CB->Destroy(Device, Pool);
 			delete CB;
 		}
@@ -543,18 +559,20 @@ struct FInstance
 		{
 			sprintf_s(s, "<VK>Error: %s\n", Message);
 			++n;
+			::OutputDebugStringA(s);
 		}
 		else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
 		{
 			sprintf_s(s, "<VK>Warn: %s\n", Message);
 			++n;
+			::OutputDebugStringA(s);
 		}
 		else
 		{
-			sprintf_s(s, "<VK>: %s\n", Message);
+			//sprintf_s(s, "<VK>: %s\n", Message);
+			//::OutputDebugStringA(s);
 		}
 
-		::OutputDebugStringA(s);
 		return false;
 	}
 
@@ -818,14 +836,14 @@ struct FSwapchain
 		checkVk(vkGetSwapchainImagesKHR(Device, Swapchain, &NumImages, nullptr));
 		Images.resize(NumImages);
 		ImageViews.resize(NumImages);
-		AcquiredSemaphores.resize(NumImages);
+		PresentCompleteSemaphores.resize(NumImages);
 		RenderingSemaphores.resize(NumImages);
 		checkVk(vkGetSwapchainImagesKHR(Device, Swapchain, &NumImages, &Images[0]));
 
 		for (uint32 Index = 0; Index < NumImages; ++Index)
 		{
 			ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
-			AcquiredSemaphores[Index].Create(Device);
+			PresentCompleteSemaphores[Index].Create(Device);
 			RenderingSemaphores[Index].Create(Device);
 		}
 	}
@@ -834,9 +852,9 @@ struct FSwapchain
 	std::vector<VkImage> Images;
 	std::vector<FImageView> ImageViews;
 	VkDevice Device;
-	std::vector<FSemaphore> AcquiredSemaphores;
+	std::vector<FSemaphore> PresentCompleteSemaphores;
 	std::vector<FSemaphore> RenderingSemaphores;
-	uint32 AcquiredSemaphoreIndex = 0;
+	uint32 PresentCompleteSemaphoreIndex = 0;
 	uint32 RenderingSemaphoreIndex = 0;
 	VkExtent2D SurfaceResolution;
 
@@ -844,6 +862,16 @@ struct FSwapchain
 
 	void Destroy()
 	{
+		for (auto& RS : RenderingSemaphores)
+		{
+			RS.Destroy(Device);
+		}
+
+		for (auto& PS : PresentCompleteSemaphores)
+		{
+			PS.Destroy(Device);
+		}
+
 		for (auto& ImageView : ImageViews)
 		{
 			ImageView.Destroy();
@@ -915,8 +943,8 @@ struct FSwapchain
 
 	void AcquireNextImage()
 	{
-		AcquiredSemaphoreIndex = (AcquiredSemaphoreIndex + 1) % AcquiredSemaphores.size();
-		VkResult Result = vkAcquireNextImageKHR(Device, Swapchain, UINT64_MAX, AcquiredSemaphores[AcquiredSemaphoreIndex].Semaphore, VK_NULL_HANDLE, &AcquiredImageIndex);
+		PresentCompleteSemaphoreIndex = (PresentCompleteSemaphoreIndex + 1) % PresentCompleteSemaphores.size();
+		VkResult Result = vkAcquireNextImageKHR(Device, Swapchain, UINT64_MAX, PresentCompleteSemaphores[PresentCompleteSemaphoreIndex].Semaphore, VK_NULL_HANDLE, &AcquiredImageIndex);
 		switch (Result)
 		{
 		case VK_SUCCESS:
@@ -931,13 +959,13 @@ struct FSwapchain
 		}
 	}
 
-	void Present(VkQueue PresentQueue, FSemaphore* RenderDone)
+	void Present(VkQueue PresentQueue)
 	{
 		VkPresentInfoKHR Info;
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		Info.waitSemaphoreCount = 1;
-		Info.pWaitSemaphores = &AcquiredSemaphores[AcquiredSemaphoreIndex].Semaphore;
+		Info.pWaitSemaphores = &RenderingSemaphores[AcquiredImageIndex].Semaphore;
 		Info.swapchainCount = 1;
 		Info.pSwapchains = &Swapchain;
 		Info.pImageIndices = &AcquiredImageIndex;
@@ -1102,9 +1130,6 @@ void DoRender()
 	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
 	CmdBuffer->Begin();
 
-	FSemaphore RenderDone;
-	RenderDone.Create(GDevice.Device);
-
 	GSwapchain.AcquireNextImage();
 
 	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -1121,18 +1146,23 @@ void DoRender()
 	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	CmdBuffer->End();
-	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, &GSwapchain.AcquiredSemaphores[GSwapchain.AcquiredSemaphoreIndex], &RenderDone);
 
-	GSwapchain.Present(GDevice.PresentQueue, &RenderDone);
+	// First submit needs to wait for present semaphore
+	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, &GSwapchain.PresentCompleteSemaphores[GSwapchain.PresentCompleteSemaphoreIndex], &GSwapchain.RenderingSemaphores[GSwapchain.AcquiredImageIndex]);
+
+	GSwapchain.Present(GDevice.PresentQueue);
 
 	FB.Destroy();
 	RenderPass.Destroy();
-
-	RenderDone.Destroy(GDevice.Device);
 }
 
-void DoResize(int32 Width, int32 Height)
+void DoResize(uint32 Width, uint32 Height)
 {
+	if (Width != GSwapchain.SurfaceResolution.width && Height != GSwapchain.SurfaceResolution.height)
+	{
+		GSwapchain.Destroy();
+		GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
+	}
 }
 
 void DoDeinit()
