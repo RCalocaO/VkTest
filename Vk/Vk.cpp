@@ -3,7 +3,11 @@
 #include "stdafx.h"
 #include "Vk.h"
 
+struct FCmdBuffer;
+
 static bool GSkipValidation = false;
+
+void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask);
 
 static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, std::vector<const char*>& OutExtensions)
 {
@@ -92,7 +96,8 @@ static FShader GPixelShader;
 
 struct FVertex
 {
-	float x, y, z, w;
+	float x, y, z;
+	uint32 Color;
 };
 
 struct FVertexBuffer
@@ -164,20 +169,24 @@ struct FGfxPipeline
 		VBDesc.stride = sizeof(FVertex);
 		VBDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-		VkVertexInputAttributeDescription VIADesc;
+		VkVertexInputAttributeDescription VIADesc[2];
 		MemZero(VIADesc);
 		//VIADesc.location = 0;
-		//VIADesc.binding = 0;
-		VIADesc.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		//VIADesc.offset = 0;
+		VIADesc[0].binding = 0;
+		VIADesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+		VIADesc[0].offset = 0;
+		VIADesc[1].binding = 0;
+		VIADesc[1].location = 1;
+		VIADesc[1].format = VK_FORMAT_R8G8B8A8_UNORM;
+		VIADesc[1].offset = 12;
 
 		VkPipelineVertexInputStateCreateInfo VIInfo;
 		MemZero(VIInfo);
 		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		VIInfo.vertexBindingDescriptionCount = 1;
 		VIInfo.pVertexBindingDescriptions = &VBDesc;
-		VIInfo.vertexAttributeDescriptionCount = 1;
-		VIInfo.pVertexAttributeDescriptions = &VIADesc;
+		VIInfo.vertexAttributeDescriptionCount = 2;
+		VIInfo.pVertexAttributeDescriptions = VIADesc;
 
 		VkPipelineInputAssemblyStateCreateInfo IAInfo;
 		MemZero(IAInfo);
@@ -990,6 +999,18 @@ struct FMemManager
 		vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &Properties);
 	}
 
+	void Destroy()
+	{
+		for (auto& Pair : Allocations)
+		{
+			for (auto* Alloc : Pair.second)
+			{
+				Alloc->Destroy();
+				delete Alloc;
+			}
+		}
+	}
+
 	uint32 GetMemTypeIndex(uint32 RequestedTypeBits, VkMemoryPropertyFlags PropertyFlags) const
 	{
 		for (uint32 Index = 0; Index < Properties.memoryTypeCount; ++Index)
@@ -1185,7 +1206,7 @@ struct FSwapchain
 		Swapchain = VK_NULL_HANDLE;
 	}
 
-	void TransitionToPresent(FCmdBuffer* CmdBuffer)
+	void ClearAndTransitionToPresent(FCmdBuffer* CmdBuffer)
 	{
 /*
 		VkMemoryRequirements Reqs;
@@ -1205,9 +1226,18 @@ struct FSwapchain
 		Region.imageExtent.width = SurfaceResolution.width;
 		Region.imageExtent.height = SurfaceResolution.height;
 */
-
+		VkClearColorValue Color;
+		MemZero(Color);
+		VkImageSubresourceRange Range;
+		MemZero(Range);
+		Range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		Range.levelCount = 1;
+		Range.layerCount = 1;
 		for (uint32 Index = 0; Index < (uint32)Images.size(); ++Index)
 		{
+			TransitionImage(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			vkCmdClearColorImage(CmdBuffer->CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
+			TransitionImage(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 /*
 			VkImageMemoryBarrier UndefineToTransferBarrier;
 			MemZero(UndefineToTransferBarrier);
@@ -1384,7 +1414,7 @@ struct FRenderPass : public FRecyclableResource
 };
 
 
-static void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
+void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
 {
 	VkImageMemoryBarrier TransferToPresentBarrier;
 	MemZero(TransferToPresentBarrier);
@@ -1460,7 +1490,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		// Setup on Present layout
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
-		GSwapchain.TransitionToPresent(CmdBuffer);
+		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
 		CmdBuffer->End();
 		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 		CmdBuffer->WaitForFence();
@@ -1482,9 +1512,9 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		void* Data;
 		checkVk(vkMapMemory(GDevice.Device, MemAlloc->Mem, 0, MemReqs.size, 0, &Data));
 		auto* Vertex = (FVertex*)Data;
-		Vertex[0].x = -1; Vertex[0].y = -1; Vertex[0].z = 0; Vertex[0].w = 1;
-		Vertex[1].x = 1; Vertex[1].y = -1; Vertex[1].z = 0; Vertex[1].w = 1;
-		Vertex[2].x = 0; Vertex[2].y = 1; Vertex[2].z = 0; Vertex[2].w = 1;
+		Vertex[0].x = -1; Vertex[0].y = -1; Vertex[0].z = 0; Vertex[0].Color = 0xffff0000;
+		Vertex[1].x = 1; Vertex[1].y = -1; Vertex[1].z = 0; Vertex[1].Color = 0xff00ff00;
+		Vertex[2].x = 0; Vertex[2].y = 1; Vertex[2].z = 0; Vertex[2].Color = 0xff0000ff;
 		vkUnmapMemory(GDevice.Device, MemAlloc->Mem);
 	}
 
@@ -1496,7 +1526,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 }
 
 FRenderPass GRenderPass;
-FFramebuffer GFramebuffer;
+std::map<int32, FFramebuffer*> GFramebuffers;
 
 void DoRender()
 {
@@ -1505,7 +1535,7 @@ void DoRender()
 
 	GSwapchain.AcquireNextImage();
 
-	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	{
 		static bool b = false;
@@ -1514,13 +1544,17 @@ void DoRender()
 			GRenderPass.Create(GDevice.Device);
 
 			GGfxPipeline.Create(GDevice.Device, &GVertexShader, &GPixelShader, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, GRenderPass.RenderPass);
+			for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
+			{
+				GFramebuffers[Index] = new FFramebuffer;
+				GFramebuffers[Index]->CreateColorOnly(GDevice.Device, GRenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+			}
 			b = true;
 		}
 	}
 
-	GFramebuffer.CreateColorOnly(GDevice.Device, GRenderPass.RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
 
-	CmdBuffer->BeginRenderPass(GRenderPass.RenderPass, GFramebuffer);
+	CmdBuffer->BeginRenderPass(GRenderPass.RenderPass, *GFramebuffers[GSwapchain.AcquiredImageIndex]);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
 	{
 		VkViewport Viewport;
@@ -1566,7 +1600,13 @@ void DoResize(uint32 Width, uint32 Height)
 
 void DoDeinit()
 {
-	GFramebuffer.Destroy();
+	GCmdBufferMgr.Destroy();
+
+	for (auto& Pair : GFramebuffers)
+	{
+		Pair.second->Destroy();
+		delete Pair.second;
+	}
 
 	GRenderPass.Destroy();
 
@@ -1576,13 +1616,12 @@ void DoDeinit()
 	GPixelShader.Destroy(GDevice.Device);
 	GVertexShader.Destroy(GDevice.Device);
 
-	GCmdBufferMgr.Destroy();
-
 	GSwapchain.Destroy();
 
 #if 0
 	GResourceRecycler.Deinit();
 #endif
+	GMemMgr.Destroy();
 	GDevice.Destroy();
 	GInstance.Destroy();
 }

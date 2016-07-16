@@ -10,9 +10,13 @@ float4 Main(float4 Pos : POSITION) : SV_POSITION
 }
 */
 
-layout (location = 0) in vec4 Position;
+layout (location = 0) in vec3 Position;
+layout (location = 1) in vec4 InColor;
+
+layout (location = 1) out vec4 Color;
 
 void main()
 {
-	gl_Position = Position;
+	gl_Position = vec4(Position.xyz, 1.0);
+	Color = InColor;
 }

@@ -10,9 +10,11 @@ float4 main() : SV_Target0
 }
 */
 
+layout (location = 1) in vec4 ColorIn;
+
 layout (location = 0) out vec4 ColorOut;
 
 void main()
 {
-	ColorOut = vec4(1.0,0.0,0.0,1.0);
+	ColorOut = ColorIn;
 }
