@@ -145,9 +145,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="..\Vk\Vk.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />
@@ -170,6 +167,10 @@
   <ItemGroup>
     <Image Include="small.ico" />
     <Image Include="Test0.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\Shaders\Test0.frag" />
+    <None Include="..\Shaders\Test0.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

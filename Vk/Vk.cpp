@@ -55,6 +55,9 @@ static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, 
 }
 
 
+std::vector<char> GVertexShader;
+std::vector<char> GPixelShader;
+
 
 struct FDevice
 {
@@ -851,7 +854,7 @@ struct FSwapchain
 	VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
 	std::vector<VkImage> Images;
 	std::vector<FImageView> ImageViews;
-	VkDevice Device;
+	VkDevice Device = VK_NULL_HANDLE;
 	std::vector<FSemaphore> PresentCompleteSemaphores;
 	std::vector<FSemaphore> RenderingSemaphores;
 	uint32 PresentCompleteSemaphoreIndex = 0;
@@ -1098,7 +1101,53 @@ static void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout 
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
 }
 
-void DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
+std::vector<char> LoadFile(const char* Filename)
+{
+	std::vector<char> Data;
+
+	FILE* File = nullptr;
+	fopen_s(&File, Filename, "rb");
+	fseek(File, 0, SEEK_END);
+	auto Size = ftell(File);
+	fseek(File, 0, SEEK_SET);
+	Data.resize(Size);
+	fread(&Data[0], 1, Size, File);
+	fclose(File);
+
+	return Data;
+}
+
+static bool LoadShaders()
+{
+	char SDKDir[MAX_PATH];
+	::GetEnvironmentVariableA("VULKAN_SDK", SDKDir, MAX_PATH - 1);
+	char Glslang[MAX_PATH];
+	sprintf_s(Glslang, "%s\\Bin\\glslangValidator.exe", SDKDir);
+	{
+		std::string CompileVS = Glslang;
+		CompileVS += " -G -H ../Shaders/Test0.vert";
+		if (system(CompileVS.c_str()))
+		{
+			return false;
+		}
+	}
+
+	{
+		std::string CompilePS = Glslang;
+		CompilePS += " -G -H ../Shaders/Test0.frag";
+		if (system(CompilePS.c_str()))
+		{
+			return false;
+		}
+	}
+
+	GVertexShader = LoadFile("vert.spv");
+	GPixelShader = LoadFile("frag.spv");
+
+	return !GVertexShader.empty() && !GPixelShader.empty();
+}
+
+bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 {
 	GInstance.Create(hInstance, hWnd);
 	GInstance.CreateDevice();
@@ -1107,12 +1156,20 @@ void DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
 
-	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
-	CmdBuffer->Begin();
-	GSwapchain.TransitionToPresent(CmdBuffer);
-	CmdBuffer->End();
-	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
-	CmdBuffer->WaitForFence();
+	{
+		// Setup on Present layout
+		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+		CmdBuffer->Begin();
+		GSwapchain.TransitionToPresent(CmdBuffer);
+		CmdBuffer->End();
+		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		CmdBuffer->WaitForFence();
+	}
+
+	if (!LoadShaders())
+	{
+		return false;
+	}
 
 #if 0
 
@@ -1123,6 +1180,8 @@ void DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	CreateFramebuffers();
 #endif
+
+	return true;
 }
 
 void DoRender()
