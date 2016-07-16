@@ -65,14 +65,14 @@ struct FShader
 			return false;
 		}
 
-		VkShaderModuleCreateInfo ShaderCreationInfo;
-		MemZero(ShaderCreationInfo);
-		ShaderCreationInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		VkShaderModuleCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 		check(SpirV.size() % 4 == 0);
-		ShaderCreationInfo.codeSize = SpirV.size();
-		ShaderCreationInfo.pCode = (uint32*)&SpirV[0];
+		CreateInfo.codeSize = SpirV.size();
+		CreateInfo.pCode = (uint32*)&SpirV[0];
 
-		checkVk(vkCreateShaderModule(Device, &ShaderCreationInfo, nullptr, &ShaderModule));
+		checkVk(vkCreateShaderModule(Device, &CreateInfo, nullptr, &ShaderModule));
 
 		return true;
 	}
@@ -89,6 +89,239 @@ struct FShader
 static FShader GVertexShader;
 static FShader GPixelShader;
 
+
+struct FVertex
+{
+	float x, y, z, w;
+};
+
+struct FVertexBuffer
+{
+	void Create(VkDevice InDevice)
+	{
+		Device = InDevice;
+		VkBufferCreateInfo BufferInfo;
+		MemZero(BufferInfo);
+		BufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		BufferInfo.size = sizeof(FVertex) * 3;
+		BufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		//BufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		checkVk(vkCreateBuffer(Device, &BufferInfo, nullptr, &Buffer));
+	}
+
+	inline VkMemoryRequirements GetMemReqs()
+	{
+		VkMemoryRequirements Reqs;
+		vkGetBufferMemoryRequirements(Device, Buffer, &Reqs);
+		return Reqs;
+	}
+
+	void Destroy(VkDevice Device)
+	{
+		vkDestroyBuffer(Device, Buffer, nullptr);
+		Buffer = VK_NULL_HANDLE;
+	}
+
+	VkDevice Device;
+	VkBuffer Buffer = VK_NULL_HANDLE;
+};
+FVertexBuffer GVB;
+
+struct FGfxPipeline
+{
+	void Create(VkDevice Device, FShader* VS, FShader* PS, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	{
+		VkPipelineLayoutCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+
+		checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
+
+		VkPipelineShaderStageCreateInfo ShaderInfo[2];
+		MemZero(ShaderInfo);
+		{
+			VkPipelineShaderStageCreateInfo* Info = ShaderInfo;
+			check(VS);
+			Info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			Info->stage = VK_SHADER_STAGE_VERTEX_BIT;
+			Info->module = VS->ShaderModule;
+			Info->pName = "main";
+			++Info;
+
+			if (PS)
+			{
+				Info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+				Info->stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+				Info->module = PS->ShaderModule;
+				Info->pName = "main";
+				++Info;
+			}
+		}
+
+		VkVertexInputBindingDescription VBDesc;
+		MemZero(VBDesc);
+		VBDesc.binding = 0;
+		VBDesc.stride = sizeof(FVertex);
+		VBDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+		VkVertexInputAttributeDescription VIADesc;
+		MemZero(VIADesc);
+		//VIADesc.location = 0;
+		//VIADesc.binding = 0;
+		VIADesc.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		//VIADesc.offset = 0;
+
+		VkPipelineVertexInputStateCreateInfo VIInfo;
+		MemZero(VIInfo);
+		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		VIInfo.vertexBindingDescriptionCount = 1;
+		VIInfo.pVertexBindingDescriptions = &VBDesc;
+		VIInfo.vertexAttributeDescriptionCount = 1;
+		VIInfo.pVertexAttributeDescriptions = &VIADesc;
+
+		VkPipelineInputAssemblyStateCreateInfo IAInfo;
+		MemZero(IAInfo);
+		IAInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		IAInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		//IAInfo.primitiveRestartEnable = VK_FALSE;
+
+		VkViewport Viewport;
+		MemZero(Viewport);
+		//Viewport.x = 0;
+		//Viewport.y = 0;
+		Viewport.width = (float)Width;
+		Viewport.height = (float)Height;
+		//Viewport.minDepth = 0;
+		Viewport.maxDepth = 1;
+
+		VkRect2D Scissor;
+		MemZero(Scissor);
+		//scissors.offset = { 0, 0 };
+		Scissor.extent = { Width, Height };
+
+		VkPipelineViewportStateCreateInfo ViewportInfo;
+		MemZero(ViewportInfo);
+		ViewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		ViewportInfo.viewportCount = 1;
+		ViewportInfo.pViewports = &Viewport;
+		ViewportInfo.scissorCount = 1;
+		ViewportInfo.pScissors = &Scissor;
+
+		VkPipelineRasterizationStateCreateInfo RSInfo;
+		MemZero(RSInfo);
+		RSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		//RSInfo.depthClampEnable = VK_FALSE;
+		//RSInfo.rasterizerDiscardEnable = VK_FALSE;
+		RSInfo.polygonMode = VK_POLYGON_MODE_FILL;
+		RSInfo.cullMode = VK_CULL_MODE_NONE;
+		RSInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		//RSInfo.depthBiasEnable = VK_FALSE;
+		//RSInfo.depthBiasConstantFactor = 0;
+		//RSInfo.depthBiasClamp = 0;
+		//RSInfo.depthBiasSlopeFactor = 0;
+		RSInfo.lineWidth = 1;
+
+		VkPipelineMultisampleStateCreateInfo MSInfo;
+		MemZero(MSInfo);
+		MSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		MSInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		//MSInfo.sampleShadingEnable = VK_FALSE;
+		//MSInfo.minSampleShading = 0;
+		//MSInfo.pSampleMask = NULL;
+		//MSInfo.alphaToCoverageEnable = VK_FALSE;
+		//MSInfo.alphaToOneEnable = VK_FALSE;
+
+		VkStencilOpState Stencil;
+		MemZero(Stencil);
+		Stencil.failOp = VK_STENCIL_OP_KEEP;
+		Stencil.passOp = VK_STENCIL_OP_KEEP;
+		Stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+		Stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+		//Stencil.compareMask = 0;
+		//Stencil.writeMask = 0;
+		//Stencil.reference = 0;
+
+		VkPipelineDepthStencilStateCreateInfo DSInfo;
+		MemZero(DSInfo);
+		DSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		DSInfo.depthTestEnable = VK_TRUE;
+		DSInfo.depthWriteEnable = VK_TRUE;
+		DSInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+		//DSInfo.depthBoundsTestEnable = VK_FALSE;
+		//DSInfo.stencilTestEnable = VK_FALSE;
+		DSInfo.front = Stencil;
+		DSInfo.back = Stencil;
+		//DSInfo.minDepthBounds = 0;
+		//DSInfo.maxDepthBounds = 0;
+
+		VkPipelineColorBlendAttachmentState AttachState;
+		MemZero(AttachState);
+		//AtachState.blendEnable = VK_FALSE;
+		AttachState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+		AttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+		AttachState.colorBlendOp = VK_BLEND_OP_ADD;
+		AttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		AttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		AttachState.alphaBlendOp = VK_BLEND_OP_ADD;
+		AttachState.colorWriteMask = 0xf;
+
+		VkPipelineColorBlendStateCreateInfo CBInfo;
+		MemZero(CBInfo);
+		CBInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		//CBInfo.logicOpEnable = VK_FALSE;
+		CBInfo.logicOp = VK_LOGIC_OP_CLEAR;
+		CBInfo.attachmentCount = 1;
+		CBInfo.pAttachments = &AttachState;
+		//CBInfo.blendConstants[0] = 0.0;
+		//CBInfo.blendConstants[1] = 0.0;
+		//CBInfo.blendConstants[2] = 0.0;
+		//CBInfo.blendConstants[3] = 0.0;
+
+		VkDynamicState Dynamic[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+		VkPipelineDynamicStateCreateInfo DynamicInfo;
+		MemZero(DynamicInfo);
+		DynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		DynamicInfo.dynamicStateCount = 2;
+		DynamicInfo.pDynamicStates = Dynamic;
+
+		VkGraphicsPipelineCreateInfo PipelineInfo;
+		MemZero(PipelineInfo);
+		PipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		PipelineInfo.stageCount = 2;
+		PipelineInfo.pStages = ShaderInfo;
+		PipelineInfo.pVertexInputState = &VIInfo;
+		PipelineInfo.pInputAssemblyState = &IAInfo;
+		PipelineInfo.pTessellationState = NULL;
+		PipelineInfo.pViewportState = &ViewportInfo;
+		PipelineInfo.pRasterizationState = &RSInfo;
+		PipelineInfo.pMultisampleState = &MSInfo;
+		PipelineInfo.pDepthStencilState = &DSInfo;
+		PipelineInfo.pColorBlendState = &CBInfo;
+		PipelineInfo.pDynamicState = &DynamicInfo;
+		PipelineInfo.layout = PipelineLayout;
+		PipelineInfo.renderPass = RenderPass;
+		//PipelineInfo.subpass = 0;
+		//PipelineInfo.basePipelineHandle = NULL;
+		//PipelineInfo.basePipelineIndex = 0;
+
+		checkVk(vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
+	}
+
+	VkPipeline Pipeline = VK_NULL_HANDLE;
+
+	void Destroy(VkDevice Device)
+	{
+		vkDestroyPipeline(Device, Pipeline, nullptr);
+		Pipeline = VK_NULL_HANDLE;
+
+		vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
+		PipelineLayout = VK_NULL_HANDLE;
+	}
+
+	VkPipelineLayout PipelineLayout;
+};
+
+static FGfxPipeline GGfxPipeline;
 
 struct FDevice
 {
@@ -737,6 +970,7 @@ struct FMemAllocation
 		Info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		Info.allocationSize = Size;
 		Info.memoryTypeIndex = MemTypeIndex;
+		checkVk(vkAllocateMemory(Device, &Info, nullptr, &Mem));
 	}
 
 	void Destroy()
@@ -748,10 +982,46 @@ struct FMemAllocation
 
 struct FMemManager
 {
-	FMemAllocation* Alloc(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex);
+	//FMemAllocation* Alloc(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex);
 
+	void Create(VkDevice InDevice, VkPhysicalDevice PhysicalDevice)
+	{
+		Device = InDevice;
+		vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &Properties);
+	}
+
+	uint32 GetMemTypeIndex(uint32 RequestedTypeBits, VkMemoryPropertyFlags PropertyFlags) const
+	{
+		for (uint32 Index = 0; Index < Properties.memoryTypeCount; ++Index)
+		{
+			if (RequestedTypeBits & (1 << Index))
+			{
+				if ((Properties.memoryTypes[Index].propertyFlags & PropertyFlags) == PropertyFlags)
+				{
+					return Index;
+				}
+			}
+		}
+
+		check(0);
+		return (uint32)-1;
+	}
+
+	FMemAllocation* Alloc(const VkMemoryRequirements& Reqs)
+	{
+		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, /*VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | */VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+		auto* MemAlloc = new FMemAllocation;
+		MemAlloc->Create(Device, Reqs.size, MemTypeIndex);
+		Allocations[MemTypeIndex].push_back(MemAlloc);
+		return MemAlloc;
+	}
+
+	VkPhysicalDeviceMemoryProperties Properties;
+	VkDevice Device = VK_NULL_HANDLE;
 	std::map<uint32, std::list<FMemAllocation*>> Allocations;
 };
+FMemManager GMemMgr;
 
 struct FBuffer : public FRecyclableResource
 {
@@ -1201,18 +1471,32 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		return false;
 	}
 
+	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
+
+	{
+		GVB.Create(GDevice.Device);
+		auto MemReqs = GVB.GetMemReqs();
+		auto MemAlloc = GMemMgr.Alloc(MemReqs);
+		vkBindBufferMemory(GDevice.Device, GVB.Buffer, MemAlloc->Mem, 0);
+
+		void* Data;
+		checkVk(vkMapMemory(GDevice.Device, MemAlloc->Mem, 0, MemReqs.size, 0, &Data));
+		auto* Vertex = (FVertex*)Data;
+		Vertex[0].x = -1; Vertex[0].y = -1; Vertex[0].z = 0; Vertex[0].w = 1;
+		Vertex[1].x = 1; Vertex[1].y = -1; Vertex[1].z = 0; Vertex[1].w = 1;
+		Vertex[2].x = 0; Vertex[2].y = 1; Vertex[2].z = 0; Vertex[2].w = 1;
+		vkUnmapMemory(GDevice.Device, MemAlloc->Mem);
+	}
+
 #if 0
-
 	CreateDescriptorLayouts();
-	CreatePipelineLayouts();
-
-	CreatePipeline();
-
-	CreateFramebuffers();
 #endif
 
 	return true;
 }
+
+FRenderPass GRenderPass;
+FFramebuffer GFramebuffer;
 
 void DoRender()
 {
@@ -1223,16 +1507,45 @@ void DoRender()
 
 	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	FRenderPass RenderPass;
-	RenderPass.Create(GDevice.Device);
+	{
+		static bool b = false;
+		if (!b)
+		{
+			GRenderPass.Create(GDevice.Device);
 
-	FFramebuffer FB;
-	FB.CreateColorOnly(GDevice.Device, RenderPass.RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+			GGfxPipeline.Create(GDevice.Device, &GVertexShader, &GPixelShader, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, GRenderPass.RenderPass);
+			b = true;
+		}
+	}
 
-	CmdBuffer->BeginRenderPass(RenderPass.RenderPass, FB);
+	GFramebuffer.CreateColorOnly(GDevice.Device, GRenderPass.RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+
+	CmdBuffer->BeginRenderPass(GRenderPass.RenderPass, GFramebuffer);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
+	{
+		VkViewport Viewport;
+		MemZero(Viewport);
+		Viewport.width = (float)GSwapchain.SurfaceResolution.width;
+		Viewport.height = (float)GSwapchain.SurfaceResolution.height;
+		Viewport.maxDepth = 1;
+		vkCmdSetViewport(CmdBuffer->CmdBuffer, 0, 1, &Viewport);
+
+		VkRect2D Scissor;
+		MemZero(Scissor);
+		Scissor.extent.width = GSwapchain.SurfaceResolution.width;
+		Scissor.extent.height = GSwapchain.SurfaceResolution.height;
+		vkCmdSetScissor(CmdBuffer->CmdBuffer, 0, 1, &Scissor);
+	}
+
+	{
+		VkDeviceSize Offset = 0;
+		vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GVB.Buffer, &Offset);
+		vkCmdDraw(CmdBuffer->CmdBuffer, 3, 1, 0, 0);
+	}
+
 	CmdBuffer->EndRenderPass();
 
-	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_ASPECT_COLOR_BIT);
+	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	CmdBuffer->End();
 
@@ -1240,9 +1553,6 @@ void DoRender()
 	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, &GSwapchain.PresentCompleteSemaphores[GSwapchain.PresentCompleteSemaphoreIndex], &GSwapchain.RenderingSemaphores[GSwapchain.AcquiredImageIndex]);
 
 	GSwapchain.Present(GDevice.PresentQueue);
-
-	FB.Destroy();
-	RenderPass.Destroy();
 }
 
 void DoResize(uint32 Width, uint32 Height)
@@ -1256,6 +1566,13 @@ void DoResize(uint32 Width, uint32 Height)
 
 void DoDeinit()
 {
+	GFramebuffer.Destroy();
+
+	GRenderPass.Destroy();
+
+	GVB.Destroy(GDevice.Device);
+
+	GGfxPipeline.Destroy(GDevice.Device);
 	GPixelShader.Destroy(GDevice.Device);
 	GVertexShader.Destroy(GDevice.Device);
 
