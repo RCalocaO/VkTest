@@ -19,6 +19,21 @@ layout (location = 1) out vec4 Color;
 
 void main()
 {
-	gl_Position = vec4(Position.xyz, 1.0);
+#if 0
+	vec4 Mat0 = vec4(0.938194156, 0.0, 0.0, 0.0);
+	vec4 Mat1 = vec4(0.0, 1.73205090, 0.0, 0.0);
+	vec4 Mat2 = vec4(0.0, 0.0, -1.00039077, -1.0);
+	vec4 Mat3 = vec4(0.0, 0.0, -0.100039080, 0.0);
+#else
+	vec4 Mat0 = vec4(0.938194156, 0.0, 0.0, 0.0);
+	vec4 Mat1 = vec4(0.0, 1.73205090, 0.0, 0.0);
+	vec4 Mat2 = vec4(0.0, 0.0, -1.00039077, -0.100039080);
+	vec4 Mat3 = vec4(0.0, 0.0, -1.0, 0.0);
+#endif
+
+	gl_Position.x = dot(Mat0, vec4(Position.xyz, 1.0));
+	gl_Position.y = dot(Mat1, vec4(Position.xyz, 1.0));
+	gl_Position.z = dot(Mat2, vec4(Position.xyz, 1.0));
+	gl_Position.w = dot(Mat3, vec4(Position.xyz, 1.0));
 	Color = InColor;
 }

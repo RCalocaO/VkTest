@@ -61,6 +61,85 @@ static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, 
 }
 
 
+struct FVector4
+{
+	union
+	{
+		float Values[4];
+		struct
+		{
+			float x, y, z, w;
+		};
+	};
+
+	static FVector4 GetZero()
+	{
+		FVector4 New;
+		MemZero(New);
+		return New;
+	}
+};
+
+struct FMatrix4x4
+{
+	union
+	{
+		float Values[16];
+		FVector4 Rows[4];
+	};
+
+	FMatrix4x4 GetTranspose() const
+	{
+		FMatrix4x4 New;
+		for (int i = 0; i < 4; ++i)
+		{
+			for (int j = 0; j < 4; ++j)
+			{
+				New.Values[i * 4 + j] = Values[j * 4 + i];
+			}
+		}
+
+		return New;
+	}
+
+	static FMatrix4x4 GetZero()
+	{
+		FMatrix4x4 New;
+		MemZero(New);
+		return New;
+	}
+
+	static FMatrix4x4 GetIdentity()
+	{
+		FMatrix4x4 New;
+		MemZero(New);
+		New.Values[0] = 1;
+		New.Values[5] = 1;
+		New.Values[10] = 1;
+		New.Values[15] = 1;
+		return New;
+	}
+
+	void Set(int32 Row, int32 Col, float Value)
+	{
+		Values[Row * 4 + Col] = Value;
+	}
+};
+
+
+FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, float NearZ, float FarZ)
+{
+	const float HalfTanFOV = (float)tan(FOVRadians / 2.0);
+	FMatrix4x4 New = FMatrix4x4::GetZero();
+	New.Set(0, 0, 1.0f / (Aspect * HalfTanFOV));
+	New.Set(1, 1, 1.0f / HalfTanFOV);
+	New.Set(2, 3, -1);
+	New.Set(2, 2, FarZ / (NearZ - FarZ));
+	New.Set(3, 2, -(FarZ * NearZ) / (FarZ - NearZ));
+	return New;
+}
+
+
 static FShader GVertexShader;
 static FShader GPixelShader;
 
@@ -1291,9 +1370,9 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		void* Data = StagingMemSubAlloc->GetMappedData();
 		check(Data);
 		auto* Vertex = (FVertex*)Data;
-		Vertex[0].x = -1; Vertex[0].y = -1; Vertex[0].z = 0; Vertex[0].Color = 0xffff0000;
-		Vertex[1].x = 1; Vertex[1].y = -1; Vertex[1].z = 0; Vertex[1].Color = 0xff00ff00;
-		Vertex[2].x = 0; Vertex[2].y = 1; Vertex[2].z = 0; Vertex[2].Color = 0xff0000ff;
+		Vertex[0].x = -0.5; Vertex[0].y = -0.1; Vertex[0].z = -1; Vertex[0].Color = 0xffff0000;
+		Vertex[1].x = 0.1; Vertex[1].y = -0.1; Vertex[1].z = -1; Vertex[1].Color = 0xff00ff00;
+		Vertex[2].x = 0; Vertex[2].y = 0.5; Vertex[2].z = -1; Vertex[2].Color = 0xff0000ff;
 	}
 
 #if 0
