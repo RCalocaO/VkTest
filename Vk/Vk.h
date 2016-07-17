@@ -8,6 +8,7 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <algorithm>
 
 typedef uint32_t uint32;
 typedef int32_t int32;
@@ -40,6 +41,24 @@ inline std::vector<char> LoadFile(const char* Filename)
 
 	return Data;
 }
+
+inline bool IsPowerOfTwo(uint64 N)
+{
+	return (N != 0) && !(N & (N - 1));
+}
+
+template <typename T>
+inline T Align(T Value, T Alignment)
+{
+	check(IsPowerOfTwo(Alignment));
+	return (Value + (Alignment - 1)) & ~(Alignment - 1);
+}
+
+struct FRange
+{
+	uint64 Begin;
+	uint64 End;
+};
 
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height);

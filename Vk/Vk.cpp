@@ -100,16 +100,17 @@ struct FVertex
 	uint32 Color;
 };
 
-struct FVertexBuffer
+
+struct FBuffer
 {
-	void Create(VkDevice InDevice)
+	void Create(VkDevice InDevice, uint64 Size, VkBufferUsageFlags UsageFlags)
 	{
 		Device = InDevice;
 		VkBufferCreateInfo BufferInfo;
 		MemZero(BufferInfo);
 		BufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		BufferInfo.size = sizeof(FVertex) * 3;
-		BufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		BufferInfo.size = Size;
+		BufferInfo.usage = UsageFlags;
 		//BufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		checkVk(vkCreateBuffer(Device, &BufferInfo, nullptr, &Buffer));
 	}
@@ -130,7 +131,16 @@ struct FVertexBuffer
 	VkDevice Device;
 	VkBuffer Buffer = VK_NULL_HANDLE;
 };
+
+struct FVertexBuffer : public FBuffer
+{
+	void Create(VkDevice InDevice)
+	{
+		FBuffer::Create(InDevice, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+	}
+};
 FVertexBuffer GVB;
+class FMemSubAlloc* GVBMemSubAlloc = nullptr;
 
 struct FGfxPipeline
 {
@@ -174,11 +184,11 @@ struct FGfxPipeline
 		//VIADesc.location = 0;
 		VIADesc[0].binding = 0;
 		VIADesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		VIADesc[0].offset = 0;
-		VIADesc[1].binding = 0;
+		VIADesc[0].offset = offsetof(FVertex, x);
+		//VIADesc[1].binding = 0;
 		VIADesc[1].location = 1;
 		VIADesc[1].format = VK_FORMAT_R8G8B8A8_UNORM;
-		VIADesc[1].offset = 12;
+		VIADesc[1].offset = offsetof(FVertex, Color);
 
 		VkPipelineVertexInputStateCreateInfo VIInfo;
 		MemZero(VIInfo);
@@ -300,7 +310,7 @@ struct FGfxPipeline
 		PipelineInfo.pStages = ShaderInfo;
 		PipelineInfo.pVertexInputState = &VIInfo;
 		PipelineInfo.pInputAssemblyState = &IAInfo;
-		PipelineInfo.pTessellationState = NULL;
+		//PipelineInfo.pTessellationState = NULL;
 		PipelineInfo.pViewportState = &ViewportInfo;
 		PipelineInfo.pRasterizationState = &RSInfo;
 		PipelineInfo.pMultisampleState = &MSInfo;
@@ -965,21 +975,26 @@ struct FImageView
 	}
 };
 
-struct FMemAllocation
+class FMemAllocation
 {
-	VkDeviceMemory Mem = VK_NULL_HANDLE;
-	VkDevice Device = VK_NULL_HANDLE;
-
-	void Create(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex)
+public:
+	FMemAllocation(VkDevice InDevice, VkDeviceSize InSize, uint32 InMemTypeIndex, bool bInMapped)
+		: Device(InDevice)
+		, Size(InSize)
+		, MemTypeIndex(InMemTypeIndex)
+		, bMapped(bInMapped)
 	{
-		Device = InDevice;
-
 		VkMemoryAllocateInfo Info;
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		Info.allocationSize = Size;
 		Info.memoryTypeIndex = MemTypeIndex;
 		checkVk(vkAllocateMemory(Device, &Info, nullptr, &Mem));
+
+		if (bMapped)
+		{
+			checkVk(vkMapMemory(Device, Mem, 0, Size, 0, &MappedMemory));
+		}
 	}
 
 	void Destroy()
@@ -987,12 +1002,168 @@ struct FMemAllocation
 		vkFreeMemory(Device, Mem, nullptr);
 		Mem = VK_NULL_HANDLE;
 	}
+
+	void* GetMappedMemory()
+	{
+		check(bMapped);
+		return MappedMemory;
+	}
+
+	VkDeviceMemory Mem = VK_NULL_HANDLE;
+
+protected:
+	VkDevice Device = VK_NULL_HANDLE;
+	uint64 Size;
+	uint32 MemTypeIndex;
+	bool bMapped;
+	void* MappedMemory = nullptr;
+	friend struct FMemManager;
 };
+
+class FMemSubAlloc;
+
+class FMemPage
+{
+public:
+	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex, bool bInMapped);
+
+	FMemSubAlloc* TryAlloc(uint64 Size, uint64 Alignment);
+
+	void Release(FMemSubAlloc* SubAlloc);
+
+	VkDeviceMemory GetHandle() const
+	{
+		return Allocation.Mem;
+	}
+
+	void* GetMappedMemory()
+	{
+		return Allocation.GetMappedMemory();
+	}
+
+protected:
+	std::vector<FRange> FreeList;
+	std::list<FMemSubAlloc*> SubAllocations;
+
+	FMemAllocation Allocation;
+
+	~FMemPage();
+
+	friend struct FMemManager;
+};
+
+class FMemSubAlloc
+{
+public:
+	FMemSubAlloc(uint64 InAllocatedOffset, uint64 InAlignedOffset, uint64 InSize, FMemPage* InOwner)
+		: AllocatedOffset(InAllocatedOffset)
+		, AlignedOffset(InAlignedOffset)
+		, Size(InSize)
+		, Owner(InOwner)
+	{
+	}
+
+	uint64 GetBindOffset() const
+	{
+		return AllocatedOffset;
+	}
+
+	VkDeviceMemory GetHandle() const
+	{
+		return Owner->GetHandle();
+	}
+
+	void* GetMappedData()
+	{
+		auto* AllMapped = (char*)Owner->GetMappedMemory();
+		AllMapped += AlignedOffset;
+		return AllMapped;
+	}
+
+	void Release()
+	{
+		Owner->Release(this);
+	}
+
+protected:
+	~FMemSubAlloc()	{}
+
+	const uint64 AllocatedOffset;
+	const uint64 AlignedOffset;
+	const uint64 Size;
+	FMemPage* Owner;
+	friend class FMemPage;
+};
+
+FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex, bool bInMapped)
+	: Allocation(InDevice, Size, MemTypeIndex, bInMapped)
+{
+	FRange Block;
+	Block.Begin = 0;
+	Block.End = Size;
+	FreeList.push_back(Block);
+}
+
+FMemPage::~FMemPage()
+{
+	check(FreeList.size() == 1);
+	check(SubAllocations.empty());
+	Allocation.Destroy();
+}
+
+FMemSubAlloc* FMemPage::TryAlloc(uint64 Size, uint64 Alignment)
+{
+	for (auto& Range : FreeList)
+	{
+		uint64 AlignedOffset = Align(Range.Begin, Alignment);
+		if (AlignedOffset + Size < Range.End)
+		{
+			auto* SubAlloc = new FMemSubAlloc(Range.Begin, AlignedOffset, Size, this);
+			SubAllocations.push_back(SubAlloc);
+			Range.Begin = AlignedOffset + Size;
+			return SubAlloc;
+		}
+	}
+
+	return nullptr;
+}
+
+void FMemPage::Release(FMemSubAlloc* SubAlloc)
+{
+	FRange NewRange;
+	NewRange.Begin = SubAlloc->AllocatedOffset;
+	NewRange.End = SubAlloc->AllocatedOffset + SubAlloc->Size;
+	FreeList.push_back(NewRange);
+	SubAllocations.remove(SubAlloc);
+	delete SubAlloc;
+
+	{
+		std::sort(FreeList.begin(), FreeList.end(),
+			[](const FRange& Left, const FRange& Right)
+			{
+				return Left.Begin < Right.Begin;
+			});
+
+		for (uint32 Index = FreeList.size() - 1; Index > 0; --Index)
+		{
+			auto& Current = FreeList[Index];
+			auto& Prev = FreeList[Index - 1];
+			if (Current.Begin == Prev.End)
+			{
+				Prev.End = Current.End;
+				for (uint32 SubIndex = Index; SubIndex < FreeList.size() - 1; ++SubIndex)
+				{
+					FreeList[SubIndex] = FreeList[SubIndex + 1];
+				}
+				FreeList.resize(FreeList.size() - 1);
+			}
+		}
+	}
+}
+
 
 struct FMemManager
 {
-	//FMemAllocation* Alloc(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex);
-
 	void Create(VkDevice InDevice, VkPhysicalDevice PhysicalDevice)
 	{
 		Device = InDevice;
@@ -1001,12 +1172,11 @@ struct FMemManager
 
 	void Destroy()
 	{
-		for (auto& Pair : Allocations)
+		for (auto& Pair : PageMap)
 		{
-			for (auto* Alloc : Pair.second)
+			for (auto* Page : Pair.second)
 			{
-				Alloc->Destroy();
-				delete Alloc;
+				delete Page;
 			}
 		}
 	}
@@ -1028,22 +1198,36 @@ struct FMemManager
 		return (uint32)-1;
 	}
 
-	FMemAllocation* Alloc(const VkMemoryRequirements& Reqs)
+	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags MemPropertyFlags)
 	{
-		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, /*VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | */VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, MemPropertyFlags);
 
-		auto* MemAlloc = new FMemAllocation;
-		MemAlloc->Create(Device, Reqs.size, MemTypeIndex);
-		Allocations[MemTypeIndex].push_back(MemAlloc);
-		return MemAlloc;
+		auto& Pages = PageMap[MemTypeIndex];
+		for (auto& Page : Pages)
+		{
+			auto* SubAlloc = Page->TryAlloc(Reqs.size, Reqs.alignment);
+			if (SubAlloc)
+			{
+				return SubAlloc;
+			}
+		}
+
+		const uint64 PageSize = 8 * 1024 * 1024;
+		const bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, bMapped);
+		Pages.push_back(NewPage);
+		auto* SubAlloc = NewPage->TryAlloc(Reqs.size, Reqs.alignment);
+		check(SubAlloc);
+		return SubAlloc;
 	}
 
 	VkPhysicalDeviceMemoryProperties Properties;
 	VkDevice Device = VK_NULL_HANDLE;
-	std::map<uint32, std::list<FMemAllocation*>> Allocations;
+	std::map<uint32, std::list<FMemPage*>> PageMap;
 };
 FMemManager GMemMgr;
 
+/*
 struct FBuffer : public FRecyclableResource
 {
 	VkBuffer Buffer = VK_NULL_HANDLE;
@@ -1068,7 +1252,7 @@ struct FBuffer : public FRecyclableResource
 		vkDestroyBuffer(Device, Buffer, nullptr);
 		Buffer = VK_NULL_HANDLE;
 	}
-};
+};*/
 
 struct FSwapchain
 {
@@ -1432,6 +1616,39 @@ void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayo
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
 }
 
+
+struct FResizableObjects
+{
+	FRenderPass RenderPass;
+	std::map<int32, FFramebuffer*> Framebuffers;
+
+	void Create()
+	{
+		RenderPass.Create(GDevice.Device);
+
+		GGfxPipeline.Create(GDevice.Device, &GVertexShader, &GPixelShader, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
+		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
+		{
+			Framebuffers[Index] = new FFramebuffer;
+			Framebuffers[Index]->CreateColorOnly(GDevice.Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+		}
+	}
+
+	void Destroy()
+	{
+		for (auto& Pair : Framebuffers)
+		{
+			Pair.second->Destroy();
+			delete Pair.second;
+		}
+
+		RenderPass.Destroy();
+
+		GGfxPipeline.Destroy(GDevice.Device);
+	}
+};
+FResizableObjects GResizableObjects;
+
 static bool LoadShaders()
 {
 	static bool bDoCompile = !false;
@@ -1486,16 +1703,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
 
-	{
-		// Setup on Present layout
-		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
-		CmdBuffer->Begin();
-		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
-		CmdBuffer->End();
-		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
-		CmdBuffer->WaitForFence();
-	}
-
 	if (!LoadShaders())
 	{
 		return false;
@@ -1503,30 +1710,69 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
-	{
-		GVB.Create(GDevice.Device);
-		auto MemReqs = GVB.GetMemReqs();
-		auto MemAlloc = GMemMgr.Alloc(MemReqs);
-		vkBindBufferMemory(GDevice.Device, GVB.Buffer, MemAlloc->Mem, 0);
 
-		void* Data;
-		checkVk(vkMapMemory(GDevice.Device, MemAlloc->Mem, 0, MemReqs.size, 0, &Data));
+	GVB.Create(GDevice.Device);
+	auto MemReqs = GVB.GetMemReqs();
+#if 0
+	{
+		auto* Test0 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		auto* Test1 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		auto* Test2 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		auto* Test3 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		auto* Test4 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		Test3->Release();
+		Test0->Release();
+		Test1->Release();
+		Test2->Release();
+		Test4->Release();
+	}
+#endif
+	FBuffer StagingBuffer;
+	StagingBuffer.Create(GDevice.Device, MemReqs.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+	auto* StagingMemSubAlloc = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	vkBindBufferMemory(GDevice.Device, StagingBuffer.Buffer, StagingMemSubAlloc->GetHandle(), StagingMemSubAlloc->GetBindOffset());
+	GVBMemSubAlloc = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	vkBindBufferMemory(GDevice.Device, GVB.Buffer, GVBMemSubAlloc->GetHandle(), GVBMemSubAlloc->GetBindOffset());
+	{
+		void* Data = StagingMemSubAlloc->GetMappedData();
+		check(Data);
 		auto* Vertex = (FVertex*)Data;
 		Vertex[0].x = -1; Vertex[0].y = -1; Vertex[0].z = 0; Vertex[0].Color = 0xffff0000;
 		Vertex[1].x = 1; Vertex[1].y = -1; Vertex[1].z = 0; Vertex[1].Color = 0xff00ff00;
 		Vertex[2].x = 0; Vertex[2].y = 1; Vertex[2].z = 0; Vertex[2].Color = 0xff0000ff;
-		vkUnmapMemory(GDevice.Device, MemAlloc->Mem);
 	}
 
 #if 0
 	CreateDescriptorLayouts();
 #endif
 
+	GResizableObjects.Create();
+
+	{
+		// Setup on Present layout
+		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+		CmdBuffer->Begin();
+		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
+
+		{
+			VkBufferCopy Region;
+			MemZero(Region);
+			Region.srcOffset = StagingMemSubAlloc->GetBindOffset();
+			Region.size = MemReqs.size;
+			Region.dstOffset = GVBMemSubAlloc->GetBindOffset();
+			vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GVB.Buffer, 1, &Region);
+		}
+
+		CmdBuffer->End();
+		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		CmdBuffer->WaitForFence();
+	}
+
+	StagingMemSubAlloc->Release();
+	StagingBuffer.Destroy(GDevice.Device);
+
 	return true;
 }
-
-FRenderPass GRenderPass;
-std::map<int32, FFramebuffer*> GFramebuffers;
 
 void DoRender()
 {
@@ -1537,24 +1783,7 @@ void DoRender()
 
 	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	{
-		static bool b = false;
-		if (!b)
-		{
-			GRenderPass.Create(GDevice.Device);
-
-			GGfxPipeline.Create(GDevice.Device, &GVertexShader, &GPixelShader, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, GRenderPass.RenderPass);
-			for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
-			{
-				GFramebuffers[Index] = new FFramebuffer;
-				GFramebuffers[Index]->CreateColorOnly(GDevice.Device, GRenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
-			}
-			b = true;
-		}
-	}
-
-
-	CmdBuffer->BeginRenderPass(GRenderPass.RenderPass, *GFramebuffers[GSwapchain.AcquiredImageIndex]);
+	CmdBuffer->BeginRenderPass(GResizableObjects.RenderPass.RenderPass, *GResizableObjects.Framebuffers[GSwapchain.AcquiredImageIndex]);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
 	{
 		VkViewport Viewport;
@@ -1593,26 +1822,22 @@ void DoResize(uint32 Width, uint32 Height)
 {
 	if (Width != GSwapchain.SurfaceResolution.width && Height != GSwapchain.SurfaceResolution.height)
 	{
+		vkDeviceWaitIdle(GDevice.Device);
 		GSwapchain.Destroy();
+		GResizableObjects.Destroy();
 		GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
+		GResizableObjects.Create();
 	}
 }
 
 void DoDeinit()
 {
+	GResizableObjects.Destroy();
 	GCmdBufferMgr.Destroy();
 
-	for (auto& Pair : GFramebuffers)
-	{
-		Pair.second->Destroy();
-		delete Pair.second;
-	}
-
-	GRenderPass.Destroy();
-
+	GVBMemSubAlloc->Release();
 	GVB.Destroy(GDevice.Device);
 
-	GGfxPipeline.Destroy(GDevice.Device);
 	GPixelShader.Destroy(GDevice.Device);
 	GVertexShader.Destroy(GDevice.Device);
 
