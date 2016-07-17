@@ -6,7 +6,7 @@
 
 struct FBuffer : public FRecyclableResource
 {
-	void Create(VkDevice InDevice, uint64 Size, VkBufferUsageFlags UsageFlags)
+	void Create(VkDevice InDevice, uint64 Size, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
 	{
 		Device = InDevice;
 		VkBufferCreateInfo BufferInfo;
@@ -16,23 +16,41 @@ struct FBuffer : public FRecyclableResource
 		BufferInfo.usage = UsageFlags;
 		//BufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		checkVk(vkCreateBuffer(Device, &BufferInfo, nullptr, &Buffer));
-	}
 
-	inline VkMemoryRequirements GetMemReqs()
-	{
-		VkMemoryRequirements Reqs;
 		vkGetBufferMemoryRequirements(Device, Buffer, &Reqs);
-		return Reqs;
+
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags);
+
+		vkBindBufferMemory(Device, Buffer, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
 
 	void Destroy(VkDevice Device)
 	{
 		vkDestroyBuffer(Device, Buffer, nullptr);
 		Buffer = VK_NULL_HANDLE;
+
+		SubAlloc->Release();
+	}
+
+	void* GetMappedData()
+	{
+		return SubAlloc->GetMappedData();
+	}
+
+	uint64 GetBindOffset()
+	{
+		return SubAlloc->GetBindOffset();
+	}
+
+	uint64 GetSize() const
+	{
+		return Reqs.size;
 	}
 
 	VkDevice Device;
 	VkBuffer Buffer = VK_NULL_HANDLE;
+	VkMemoryRequirements Reqs;
+	FMemSubAlloc* SubAlloc = nullptr;
 };
 
 

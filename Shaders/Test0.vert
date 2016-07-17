@@ -10,6 +10,10 @@ float4 Main(float4 Pos : POSITION) : SV_POSITION
 }
 */
 
+layout (binding = 0, set=0) uniform UB
+{
+	mat4 ProjectionMtx;
+} VSUB;
 
 
 layout (location = 0) in vec3 Position;
@@ -19,21 +23,13 @@ layout (location = 1) out vec4 Color;
 
 void main()
 {
-#if 0
-	vec4 Mat0 = vec4(0.938194156, 0.0, 0.0, 0.0);
+	vec4 Mat0 = vec4(0.8823998, 0.0, 0.0, 0.0);
 	vec4 Mat1 = vec4(0.0, 1.73205090, 0.0, 0.0);
-	vec4 Mat2 = vec4(0.0, 0.0, -1.00039077, -1.0);
-	vec4 Mat3 = vec4(0.0, 0.0, -0.100039080, 0.0);
-#else
-	vec4 Mat0 = vec4(0.938194156, 0.0, 0.0, 0.0);
-	vec4 Mat1 = vec4(0.0, 1.73205090, 0.0, 0.0);
-	vec4 Mat2 = vec4(0.0, 0.0, -1.00039077, -0.100039080);
-	vec4 Mat3 = vec4(0.0, 0.0, -1.0, 0.0);
-#endif
+	vec4 Mat2 = vec4(0.0, 0.0, -1.0001, -1.0);
+	vec4 Mat3 = vec4(0.0, 0.0, -0.10001, 0.0);
 
-	gl_Position.x = dot(Mat0, vec4(Position.xyz, 1.0));
-	gl_Position.y = dot(Mat1, vec4(Position.xyz, 1.0));
-	gl_Position.z = dot(Mat2, vec4(Position.xyz, 1.0));
-	gl_Position.w = dot(Mat3, vec4(Position.xyz, 1.0));
+	mat4 Mat = mat4(Mat0, Mat1, Mat2, Mat3);
+	gl_Position = Mat * vec4(Position.xyz, 1.0);
+
 	Color = InColor;
 }

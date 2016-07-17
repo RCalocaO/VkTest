@@ -151,16 +151,8 @@ struct FVertex
 };
 
 
-
-struct FVertexBuffer : public FBuffer
-{
-	void Create(VkDevice InDevice)
-	{
-		FBuffer::Create(InDevice, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-	}
-};
-FVertexBuffer GVB;
-class FMemSubAlloc* GVBMemSubAlloc = nullptr;
+FBuffer GVB;
+FBuffer GVSUB;
 
 struct FGfxPipeline
 {
@@ -1343,9 +1335,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
-
-	GVB.Create(GDevice.Device);
-	auto MemReqs = GVB.GetMemReqs();
+	GVB.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 #if 0
 	{
 		auto* Test0 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
@@ -1361,19 +1351,20 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	}
 #endif
 	FBuffer StagingBuffer;
-	StagingBuffer.Create(GDevice.Device, MemReqs.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-	auto* StagingMemSubAlloc = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	vkBindBufferMemory(GDevice.Device, StagingBuffer.Buffer, StagingMemSubAlloc->GetHandle(), StagingMemSubAlloc->GetBindOffset());
-	GVBMemSubAlloc = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	vkBindBufferMemory(GDevice.Device, GVB.Buffer, GVBMemSubAlloc->GetHandle(), GVBMemSubAlloc->GetBindOffset());
+	StagingBuffer.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+
 	{
-		void* Data = StagingMemSubAlloc->GetMappedData();
+		void* Data = StagingBuffer.GetMappedData();
 		check(Data);
 		auto* Vertex = (FVertex*)Data;
-		Vertex[0].x = -0.5; Vertex[0].y = -0.1; Vertex[0].z = -1; Vertex[0].Color = 0xffff0000;
-		Vertex[1].x = 0.1; Vertex[1].y = -0.1; Vertex[1].z = -1; Vertex[1].Color = 0xff00ff00;
-		Vertex[2].x = 0; Vertex[2].y = 0.5; Vertex[2].z = -1; Vertex[2].Color = 0xff0000ff;
+		Vertex[0].x = -0.5f; Vertex[0].y = -0.5f; Vertex[0].z = -1; Vertex[0].Color = 0xffff0000;
+		Vertex[1].x = 0.1f; Vertex[1].y = -0.5f; Vertex[1].z = -1; Vertex[1].Color = 0xff00ff00;
+		Vertex[2].x = 0; Vertex[2].y = 0.5f; Vertex[2].z = -1; Vertex[2].Color = 0xff0000ff;
 	}
+
+	GVSUB.Create(GDevice.Device, sizeof(FMatrix4x4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
+	FMatrix4x4 Project = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
+	memcpy(GVSUB.GetMappedData(), &Project, sizeof(FMatrix4x4));
 
 #if 0
 	CreateDescriptorLayouts();
@@ -1390,9 +1381,9 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		{
 			VkBufferCopy Region;
 			MemZero(Region);
-			Region.srcOffset = StagingMemSubAlloc->GetBindOffset();
-			Region.size = MemReqs.size;
-			Region.dstOffset = GVBMemSubAlloc->GetBindOffset();
+			Region.srcOffset = StagingBuffer.GetBindOffset();
+			Region.size = StagingBuffer.GetSize();
+			Region.dstOffset = GVB.GetBindOffset();
 			vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GVB.Buffer, 1, &Region);
 		}
 
@@ -1401,7 +1392,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		CmdBuffer->WaitForFence();
 	}
 
-	StagingMemSubAlloc->Release();
 	StagingBuffer.Destroy(GDevice.Device);
 
 	return true;
@@ -1468,8 +1458,8 @@ void DoDeinit()
 	GResizableObjects.Destroy();
 	GCmdBufferMgr.Destroy();
 
-	GVBMemSubAlloc->Release();
 	GVB.Destroy(GDevice.Device);
+	GVSUB.Destroy(GDevice.Device);
 
 	GPixelShader.Destroy(GDevice.Device);
 	GVertexShader.Destroy(GDevice.Device);

@@ -54,6 +54,17 @@ inline T Align(T Value, T Alignment)
 	return (Value + (Alignment - 1)) & ~(Alignment - 1);
 }
 
+inline float ToRadians(float Deg)
+{
+	return Deg * (3.14159265f / 180.0f);
+}
+
+inline float ToDegrees(float Rad)
+{
+	return Rad * (180.0f / 3.14159265f);
+}
+
+
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height);
 void DoRender();
 void DoResize(uint32 Width, uint32 Height);
