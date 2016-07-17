@@ -2,6 +2,8 @@
 
 #include "stdafx.h"
 #include "Vk.h"
+#include "VkMem.h"
+#include "VkResources.h"
 
 struct FCmdBuffer;
 
@@ -59,37 +61,6 @@ static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, 
 }
 
 
-struct FShader
-{
-	bool Create(const char* Filename, VkDevice Device)
-	{
-		SpirV = LoadFile(Filename);
-		if (SpirV.empty())
-		{
-			return false;
-		}
-
-		VkShaderModuleCreateInfo CreateInfo;
-		MemZero(CreateInfo);
-		CreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		check(SpirV.size() % 4 == 0);
-		CreateInfo.codeSize = SpirV.size();
-		CreateInfo.pCode = (uint32*)&SpirV[0];
-
-		checkVk(vkCreateShaderModule(Device, &CreateInfo, nullptr, &ShaderModule));
-
-		return true;
-	}
-
-	void Destroy(VkDevice Device)
-	{
-		vkDestroyShaderModule(Device, ShaderModule, nullptr);
-		ShaderModule = VK_NULL_HANDLE;
-	}
-
-	std::vector<char> SpirV;
-	VkShaderModule ShaderModule;
-};
 static FShader GVertexShader;
 static FShader GPixelShader;
 
@@ -101,36 +72,6 @@ struct FVertex
 };
 
 
-struct FBuffer
-{
-	void Create(VkDevice InDevice, uint64 Size, VkBufferUsageFlags UsageFlags)
-	{
-		Device = InDevice;
-		VkBufferCreateInfo BufferInfo;
-		MemZero(BufferInfo);
-		BufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		BufferInfo.size = Size;
-		BufferInfo.usage = UsageFlags;
-		//BufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		checkVk(vkCreateBuffer(Device, &BufferInfo, nullptr, &Buffer));
-	}
-
-	inline VkMemoryRequirements GetMemReqs()
-	{
-		VkMemoryRequirements Reqs;
-		vkGetBufferMemoryRequirements(Device, Buffer, &Reqs);
-		return Reqs;
-	}
-
-	void Destroy(VkDevice Device)
-	{
-		vkDestroyBuffer(Device, Buffer, nullptr);
-		Buffer = VK_NULL_HANDLE;
-	}
-
-	VkDevice Device;
-	VkBuffer Buffer = VK_NULL_HANDLE;
-};
 
 struct FVertexBuffer : public FBuffer
 {
@@ -388,92 +329,6 @@ struct FDevice
 };
 FDevice GDevice;
 
-struct FRecyclableResource
-{
-};
-
-struct FFence : public FRecyclableResource
-{
-	VkFence Fence = VK_NULL_HANDLE;
-	uint64 FenceSignaledCounter = 0;
-	VkDevice Device = VK_NULL_HANDLE;
-
-	enum EState
-	{
-		NotSignaled,
-		Signaled,
-	};
-	EState State = EState::NotSignaled;
-
-	void Create(VkDevice InDevice)
-	{
-		Device = InDevice;
-
-		VkFenceCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		checkVk(vkCreateFence(Device, &Info, nullptr, &Fence));
-	}
-
-	void Destroy(VkDevice Device)
-	{
-		vkDestroyFence(Device, Fence, nullptr);
-		Fence = VK_NULL_HANDLE;
-	}
-
-	void Wait(uint64 TimeInNanoseconds = 0xffffffff)
-	{
-		check(State == EState::NotSignaled);
-		checkVk(vkWaitForFences(Device, 1, &Fence, true, TimeInNanoseconds));
-		RefreshState();
-	}
-
-	bool IsNotSignaled() const
-	{
-		return State == EState::NotSignaled;
-	}
-
-	void RefreshState()
-	{
-		if (State == EState::NotSignaled)
-		{
-			VkResult Result = vkGetFenceStatus(Device, Fence);
-			switch (Result)
-			{
-			case VK_SUCCESS:
-				++FenceSignaledCounter;
-				State = EState::Signaled;
-				checkVk(vkResetFences(Device, 1, &Fence));
-				break;
-			case VK_NOT_READY:
-				break;
-			default:
-				checkVk(Result);
-				break;
-			}
-		}
-	}
-};
-
-struct FSemaphore : public FRecyclableResource
-{
-	VkSemaphore Semaphore = VK_NULL_HANDLE;
-
-	void Create(VkDevice Device)
-	{
-		VkSemaphoreCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-		checkVk(vkCreateSemaphore(Device, &Info, nullptr, &Semaphore));
-	}
-
-	void Destroy(VkDevice Device)
-	{
-		vkDestroySemaphore(Device, Semaphore, nullptr);
-		Semaphore = VK_NULL_HANDLE;
-	}
-};
-
 struct FCmdBuffer
 {
 	VkCommandBuffer CmdBuffer = VK_NULL_HANDLE;
@@ -594,93 +449,6 @@ public:
 		return FenceSignaledCounter < CmdBuffer->Fence.FenceSignaledCounter;
 	}
 };
-
-#if 0
-class FResourceRecycler
-{
-public:
-	enum class EType
-	{
-		Semaphore,
-	};
-
-	void Deinit()
-	{
-		check(Entries.empty());
-	}
-
-	inline void EnqueueResource(FSemaphore* Semaphore, FCmdBuffer* CmdBuffer)
-	{
-		EnqueueGenericResource(Semaphore, EType::Semaphore, CmdBuffer);
-	}
-
-	void Process()
-	{
-		std::list<FEntry*> NewList;
-		for (auto* Entry : Entries)
-		{
-			if (Entry->HasFencePassed())
-			{
-				AvailableResources.push_back(Entry);
-			}
-			else
-			{
-				NewList.push_back(Entry);
-			}
-		}
-
-		Entries.swap(NewList);
-	}
-
-	FSemaphore* AcquireSemaphore()
-	{
-		return AcquireGeneric<FSemaphore, EType::Semaphore>();
-	}
-
-protected:
-	void EnqueueGenericResource(FRecyclableResource* Resource, EType Type, FCmdBuffer* CmdBuffer)
-	{
-		auto* NewEntry = new FEntry(CmdBuffer, Type, Resource);
-		Entries.push_back(NewEntry);
-	}
-
-	template <typename T, EType Type>
-	T* AcquireGeneric()
-	{
-		for (auto* Entry : AvailableResources)
-		{
-			if (Entry->Type == Type)
-			{
-				T* Found = Entry->Resource;
-				AvailableResources.remove(Entry);
-				delete Entry;
-				return Found;
-			}
-		}
-
-		return nullptr;
-	}
-
-	struct FEntry : public FCmdBufferFence
-	{
-		FRecyclableResource* Resource;
-		EType Type;
-
-		FEntry(FCmdBuffer* InBuffer, EType InType, FRecyclableResource* InResource)
-			: FCmdBufferFence(InBuffer)
-			, Resource(InResource)
-			, Type(InType)
-		{
-		}
-	};
-
-	std::list<FEntry*> Entries;
-	std::list<FEntry*> AvailableResources;
-};
-
-FResourceRecycler GResourceRecycler;
-#endif
-
 
 struct FCmdBufferMgr
 {
@@ -943,157 +711,6 @@ struct FInstance
 FInstance GInstance;
 
 
-struct FImageView
-{
-	VkImageView ImageView = VK_NULL_HANDLE;
-	VkDevice Device = VK_NULL_HANDLE;
-
-	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat Format, VkImageAspectFlags ImageAspect)
-	{
-		Device = InDevice;
-
-		VkImageViewCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		Info.image = Image;
-		Info.viewType = ViewType;
-		Info.format = Format;
-		Info.components.r = VK_COMPONENT_SWIZZLE_R;
-		Info.components.g = VK_COMPONENT_SWIZZLE_G;
-		Info.components.b = VK_COMPONENT_SWIZZLE_B;
-		Info.components.a = VK_COMPONENT_SWIZZLE_A;
-		Info.subresourceRange.aspectMask = ImageAspect;// VK_IMAGE_ASPECT_COLOR_BIT;
-		Info.subresourceRange.levelCount = 1;
-		Info.subresourceRange.layerCount = 1;
-		checkVk(vkCreateImageView(Device, &Info, nullptr, &ImageView));
-	}
-
-	void Destroy()
-	{
-		vkDestroyImageView(Device, ImageView, nullptr);
-		ImageView = VK_NULL_HANDLE;
-	}
-};
-
-class FMemAllocation
-{
-public:
-	FMemAllocation(VkDevice InDevice, VkDeviceSize InSize, uint32 InMemTypeIndex, bool bInMapped)
-		: Device(InDevice)
-		, Size(InSize)
-		, MemTypeIndex(InMemTypeIndex)
-		, bMapped(bInMapped)
-	{
-		VkMemoryAllocateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		Info.allocationSize = Size;
-		Info.memoryTypeIndex = MemTypeIndex;
-		checkVk(vkAllocateMemory(Device, &Info, nullptr, &Mem));
-
-		if (bMapped)
-		{
-			checkVk(vkMapMemory(Device, Mem, 0, Size, 0, &MappedMemory));
-		}
-	}
-
-	void Destroy()
-	{
-		vkFreeMemory(Device, Mem, nullptr);
-		Mem = VK_NULL_HANDLE;
-	}
-
-	void* GetMappedMemory()
-	{
-		check(bMapped);
-		return MappedMemory;
-	}
-
-	VkDeviceMemory Mem = VK_NULL_HANDLE;
-
-protected:
-	VkDevice Device = VK_NULL_HANDLE;
-	uint64 Size;
-	uint32 MemTypeIndex;
-	bool bMapped;
-	void* MappedMemory = nullptr;
-	friend struct FMemManager;
-};
-
-class FMemSubAlloc;
-
-class FMemPage
-{
-public:
-	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex, bool bInMapped);
-
-	FMemSubAlloc* TryAlloc(uint64 Size, uint64 Alignment);
-
-	void Release(FMemSubAlloc* SubAlloc);
-
-	VkDeviceMemory GetHandle() const
-	{
-		return Allocation.Mem;
-	}
-
-	void* GetMappedMemory()
-	{
-		return Allocation.GetMappedMemory();
-	}
-
-protected:
-	std::vector<FRange> FreeList;
-	std::list<FMemSubAlloc*> SubAllocations;
-
-	FMemAllocation Allocation;
-
-	~FMemPage();
-
-	friend struct FMemManager;
-};
-
-class FMemSubAlloc
-{
-public:
-	FMemSubAlloc(uint64 InAllocatedOffset, uint64 InAlignedOffset, uint64 InSize, FMemPage* InOwner)
-		: AllocatedOffset(InAllocatedOffset)
-		, AlignedOffset(InAlignedOffset)
-		, Size(InSize)
-		, Owner(InOwner)
-	{
-	}
-
-	uint64 GetBindOffset() const
-	{
-		return AllocatedOffset;
-	}
-
-	VkDeviceMemory GetHandle() const
-	{
-		return Owner->GetHandle();
-	}
-
-	void* GetMappedData()
-	{
-		auto* AllMapped = (char*)Owner->GetMappedMemory();
-		AllMapped += AlignedOffset;
-		return AllMapped;
-	}
-
-	void Release()
-	{
-		Owner->Release(this);
-	}
-
-protected:
-	~FMemSubAlloc()	{}
-
-	const uint64 AllocatedOffset;
-	const uint64 AlignedOffset;
-	const uint64 Size;
-	FMemPage* Owner;
-	friend class FMemPage;
-};
 
 FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex, bool bInMapped)
 	: Allocation(InDevice, Size, MemTypeIndex, bInMapped)
@@ -1162,69 +779,6 @@ void FMemPage::Release(FMemSubAlloc* SubAlloc)
 }
 
 
-struct FMemManager
-{
-	void Create(VkDevice InDevice, VkPhysicalDevice PhysicalDevice)
-	{
-		Device = InDevice;
-		vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &Properties);
-	}
-
-	void Destroy()
-	{
-		for (auto& Pair : PageMap)
-		{
-			for (auto* Page : Pair.second)
-			{
-				delete Page;
-			}
-		}
-	}
-
-	uint32 GetMemTypeIndex(uint32 RequestedTypeBits, VkMemoryPropertyFlags PropertyFlags) const
-	{
-		for (uint32 Index = 0; Index < Properties.memoryTypeCount; ++Index)
-		{
-			if (RequestedTypeBits & (1 << Index))
-			{
-				if ((Properties.memoryTypes[Index].propertyFlags & PropertyFlags) == PropertyFlags)
-				{
-					return Index;
-				}
-			}
-		}
-
-		check(0);
-		return (uint32)-1;
-	}
-
-	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags MemPropertyFlags)
-	{
-		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, MemPropertyFlags);
-
-		auto& Pages = PageMap[MemTypeIndex];
-		for (auto& Page : Pages)
-		{
-			auto* SubAlloc = Page->TryAlloc(Reqs.size, Reqs.alignment);
-			if (SubAlloc)
-			{
-				return SubAlloc;
-			}
-		}
-
-		const uint64 PageSize = 8 * 1024 * 1024;
-		const bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, bMapped);
-		Pages.push_back(NewPage);
-		auto* SubAlloc = NewPage->TryAlloc(Reqs.size, Reqs.alignment);
-		check(SubAlloc);
-		return SubAlloc;
-	}
-
-	VkPhysicalDeviceMemoryProperties Properties;
-	VkDevice Device = VK_NULL_HANDLE;
-	std::map<uint32, std::list<FMemPage*>> PageMap;
-};
 FMemManager GMemMgr;
 
 /*

@@ -30,6 +30,12 @@
     <ClInclude Include="..\Vk\Vk.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\Vk\VkMem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Vk\VkResources.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
