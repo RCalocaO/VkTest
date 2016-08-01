@@ -145,6 +145,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Meshes\ObjLoader.h" />
+    <ClInclude Include="..\Utils\Util.h" />
     <ClInclude Include="..\Vk\Vk.h" />
     <ClInclude Include="..\Vk\VkMem.h" />
     <ClInclude Include="..\Vk\VkResources.h" />
@@ -154,6 +156,7 @@
     <ClInclude Include="Test0.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\Meshes\ObjLoader.cpp" />
     <ClCompile Include="..\Vk\Vk.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

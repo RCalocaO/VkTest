@@ -4,8 +4,11 @@
 #include "Vk.h"
 #include "VkMem.h"
 #include "VkResources.h"
+#include "../Meshes/ObjLoader.h"
 
 struct FCmdBuffer;
+
+static Obj::FObj GObj;
 
 static bool GSkipValidation = false;
 
@@ -59,72 +62,6 @@ static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, 
 		}
 	}
 }
-
-
-struct FVector4
-{
-	union
-	{
-		float Values[4];
-		struct
-		{
-			float x, y, z, w;
-		};
-	};
-
-	static FVector4 GetZero()
-	{
-		FVector4 New;
-		MemZero(New);
-		return New;
-	}
-};
-
-struct FMatrix4x4
-{
-	union
-	{
-		float Values[16];
-		FVector4 Rows[4];
-	};
-
-	FMatrix4x4 GetTranspose() const
-	{
-		FMatrix4x4 New;
-		for (int i = 0; i < 4; ++i)
-		{
-			for (int j = 0; j < 4; ++j)
-			{
-				New.Values[i * 4 + j] = Values[j * 4 + i];
-			}
-		}
-
-		return New;
-	}
-
-	static FMatrix4x4 GetZero()
-	{
-		FMatrix4x4 New;
-		MemZero(New);
-		return New;
-	}
-
-	static FMatrix4x4 GetIdentity()
-	{
-		FMatrix4x4 New;
-		MemZero(New);
-		New.Values[0] = 1;
-		New.Values[5] = 1;
-		New.Values[10] = 1;
-		New.Values[15] = 1;
-		return New;
-	}
-
-	void Set(int32 Row, int32 Col, float Value)
-	{
-		Values[Row * 4 + Col] = Value;
-	}
-};
 
 
 FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, float NearZ, float FarZ)
@@ -1274,7 +1211,7 @@ struct FResizableObjects
 };
 FResizableObjects GResizableObjects;
 
-static bool LoadShaders()
+static bool LoadShadersAndGeometry()
 {
 	static bool bDoCompile = !false;
 	if (bDoCompile)
@@ -1316,6 +1253,11 @@ static bool LoadShaders()
 		return false;
 	}
 
+	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
+	{
+		return false;
+	}
+
 	return true;
 }
 
@@ -1328,7 +1270,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
 
-	if (!LoadShaders())
+	if (!LoadShadersAndGeometry())
 	{
 		return false;
 	}
