@@ -136,6 +136,7 @@ struct FMemManager
 	{
 		Device = InDevice;
 		vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &Properties);
+		check(Properties.memoryTypeCount != 0 && Properties.memoryHeapCount != 0);
 	}
 
 	void Destroy()

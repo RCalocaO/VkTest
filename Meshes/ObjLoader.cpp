@@ -87,9 +87,9 @@ namespace Obj
 					const char* Ptr = Line + 2;
 					FVector3 V;
 					V.x = ReadFloatAndAdvance(Ptr);
-					check(*Ptr == ' ');
+					check(*Ptr++ == ' ');
 					V.y = ReadFloatAndAdvance(Ptr);
-					check(*Ptr == ' ');
+					check(*Ptr++ == ' ');
 					V.z = ReadFloatAndAdvance(Ptr);
 					OutObj.Vs.push_back(V);
 				}
@@ -107,9 +107,9 @@ namespace Obj
 					const char* Ptr = Line + 3;
 					FVector3 V;
 					V.x = ReadFloatAndAdvance(Ptr);
-					check(*Ptr == ' ');
+					check(*Ptr++ == ' ');
 					V.y = ReadFloatAndAdvance(Ptr);
-					check(*Ptr == ' ');
+					check(*Ptr++ == ' ');
 					V.z = ReadFloatAndAdvance(Ptr);
 					OutObj.VNs.push_back(V);
 				}
@@ -121,7 +121,7 @@ namespace Obj
 					{
 						{
 							int32 VIndex = ReadIntAndAdvance(Ptr);
-							if (Index < 0)
+							if (VIndex < 0)
 							{
 								VIndex = VIndex + OutObj.Vs.size();
 							}

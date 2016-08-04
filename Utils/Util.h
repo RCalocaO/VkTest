@@ -169,3 +169,12 @@ struct FMatrix4x4
 		Values[Row * 4 + Col] = Value;
 	}
 };
+
+inline uint32 PackNormalToU32(const FVector3& V)
+{
+	uint32 Out = 0;
+	Out |= ((uint32)((V.x + 1.0f) * 127.5f) & 0xff) << 0;
+	Out |= ((uint32)((V.y + 1.0f) * 127.5f) & 0xff) << 8;
+	Out |= ((uint32)((V.z + 1.0f) * 127.5f) & 0xff) << 16;
+	return Out;
+};

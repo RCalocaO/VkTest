@@ -8,6 +8,7 @@
 
 struct FCmdBuffer;
 
+static FBuffer GObjVB;
 static Obj::FObj GObj;
 
 static bool GSkipValidation = false;
@@ -180,7 +181,7 @@ struct FGfxPipeline
 		RSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		//RSInfo.depthClampEnable = VK_FALSE;
 		//RSInfo.rasterizerDiscardEnable = VK_FALSE;
-		RSInfo.polygonMode = VK_POLYGON_MODE_FILL;
+		RSInfo.polygonMode = VK_POLYGON_MODE_LINE;
 		RSInfo.cullMode = VK_CULL_MODE_NONE;
 		RSInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		//RSInfo.depthBiasEnable = VK_FALSE;
@@ -984,40 +985,6 @@ struct FSwapchain
 			TransitionImage(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 			vkCmdClearColorImage(CmdBuffer->CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
 			TransitionImage(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-/*
-			VkImageMemoryBarrier UndefineToTransferBarrier;
-			MemZero(UndefineToTransferBarrier);
-			UndefineToTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			UndefineToTransferBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-			UndefineToTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			UndefineToTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			UndefineToTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			UndefineToTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			UndefineToTransferBarrier.image = Images[Index];
-			UndefineToTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			UndefineToTransferBarrier.subresourceRange.layerCount = 1;
-			UndefineToTransferBarrier.subresourceRange.levelCount = 1;
-			vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &UndefineToTransferBarrier);
-
-			vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, Buffer.Buffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
-*/
-
-/*
-			VkImageMemoryBarrier TransferToPresentBarrier;
-			MemZero(TransferToPresentBarrier);
-			TransferToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			TransferToPresentBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-			TransferToPresentBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			TransferToPresentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-			TransferToPresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			TransferToPresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			TransferToPresentBarrier.image = Images[Index];
-			TransferToPresentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			TransferToPresentBarrier.subresourceRange.layerCount = 1;
-			TransferToPresentBarrier.subresourceRange.levelCount = 1;
-			vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
-*/
-
 		}
 	}
 
@@ -1258,6 +1225,46 @@ static bool LoadShadersAndGeometry()
 		return false;
 	}
 
+	GObjVB.Create(GDevice.Device, sizeof(FVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	{
+		FBuffer StagingBuffer;
+		StagingBuffer.Create(GDevice.Device, sizeof(FVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+
+		void* Data = StagingBuffer.GetMappedData();
+		check(Data);
+		auto* Vertex = (FVertex*)Data;
+		for (uint32 Index = 0; Index < GObj.Faces.size(); ++Index)
+		{
+			auto& Face = GObj.Faces[Index];
+			for (uint32 Corner = 0; Corner < 3; ++Corner)
+			{
+				Vertex->x = GObj.Vs[Face.Corners[Corner].Pos].x;
+				Vertex->y = GObj.Vs[Face.Corners[Corner].Pos].y;
+				Vertex->z = GObj.Vs[Face.Corners[Corner].Pos].z;
+				Vertex->Color = PackNormalToU32(GObj.VNs[Face.Corners[Corner].Normal]);
+				++Vertex;
+			}
+		}
+
+		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+		CmdBuffer->Begin();
+
+		{
+			VkBufferCopy Region;
+			MemZero(Region);
+			Region.srcOffset = StagingBuffer.GetBindOffset();
+			Region.size = StagingBuffer.GetSize();
+			Region.dstOffset = GObjVB.GetBindOffset();
+			vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GObjVB.Buffer, 1, &Region);
+		}
+
+		CmdBuffer->End();
+		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		CmdBuffer->WaitForFence();
+
+		StagingBuffer.Destroy(GDevice.Device);
+	}
+
 	return true;
 }
 
@@ -1269,29 +1276,17 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
 
 	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
+	
+	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
+
 
 	if (!LoadShadersAndGeometry())
 	{
 		return false;
 	}
 
-	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
-
 	GVB.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-#if 0
-	{
-		auto* Test0 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		auto* Test1 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		auto* Test2 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		auto* Test3 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		auto* Test4 = GMemMgr.Alloc(MemReqs, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		Test3->Release();
-		Test0->Release();
-		Test1->Release();
-		Test2->Release();
-		Test4->Release();
-	}
-#endif
+
 	FBuffer StagingBuffer;
 	StagingBuffer.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 
@@ -1307,10 +1302,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GVSUB.Create(GDevice.Device, sizeof(FMatrix4x4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
 	FMatrix4x4 Project = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
 	memcpy(GVSUB.GetMappedData(), &Project, sizeof(FMatrix4x4));
-
-#if 0
-	CreateDescriptorLayouts();
-#endif
 
 	GResizableObjects.Create();
 
@@ -1367,8 +1358,9 @@ void DoRender()
 
 	{
 		VkDeviceSize Offset = 0;
-		vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GVB.Buffer, &Offset);
-		vkCmdDraw(CmdBuffer->CmdBuffer, 3, 1, 0, 0);
+		//vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GVB.Buffer, &Offset);
+		vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GObjVB.Buffer, &Offset);
+		vkCmdDraw(CmdBuffer->CmdBuffer, GObj.Faces.size() * 3, 1, 0, 0);
 	}
 
 	CmdBuffer->EndRenderPass();
@@ -1402,6 +1394,7 @@ void DoDeinit()
 
 	GVB.Destroy(GDevice.Device);
 	GVSUB.Destroy(GDevice.Device);
+	GObjVB.Destroy(GDevice.Device);
 
 	GPixelShader.Destroy(GDevice.Device);
 	GVertexShader.Destroy(GDevice.Device);
