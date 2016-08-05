@@ -89,8 +89,8 @@ struct FVertex
 };
 
 
-FBuffer GVB;
-FBuffer GVSUB;
+FBuffer GTriVB;
+FBuffer GProjMtxUB;
 
 struct FGfxPipeline
 {
@@ -1178,6 +1178,37 @@ struct FResizableObjects
 };
 FResizableObjects GResizableObjects;
 
+
+template <typename TFillLambda>
+void MapAndFillBufferSync(TFillLambda Fill, uint32 Size)
+{
+	FBuffer StagingBuffer;
+	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	void* Data = StagingBuffer.GetMappedData();
+	check(Data);
+	auto* Vertex = (FVertex*)Data;
+	Fill(Vertex);
+
+	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	CmdBuffer->Begin();
+
+	{
+		VkBufferCopy Region;
+		MemZero(Region);
+		Region.srcOffset = StagingBuffer.GetBindOffset();
+		Region.size = StagingBuffer.GetSize();
+		Region.dstOffset = GObjVB.GetBindOffset();
+		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GObjVB.Buffer, 1, &Region);
+	}
+
+	CmdBuffer->End();
+	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	CmdBuffer->WaitForFence();
+
+	StagingBuffer.Destroy(GDevice.Device);
+}
+
+
 static bool LoadShadersAndGeometry()
 {
 	static bool bDoCompile = !false;
@@ -1226,11 +1257,9 @@ static bool LoadShadersAndGeometry()
 	}
 
 	GObjVB.Create(GDevice.Device, sizeof(FVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-	{
-		FBuffer StagingBuffer;
-		StagingBuffer.Create(GDevice.Device, sizeof(FVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 
-		void* Data = StagingBuffer.GetMappedData();
+	auto FillObj = [](void* Data)
+	{
 		check(Data);
 		auto* Vertex = (FVertex*)Data;
 		for (uint32 Index = 0; Index < GObj.Faces.size(); ++Index)
@@ -1245,25 +1274,9 @@ static bool LoadShadersAndGeometry()
 				++Vertex;
 			}
 		}
+	};
 
-		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
-		CmdBuffer->Begin();
-
-		{
-			VkBufferCopy Region;
-			MemZero(Region);
-			Region.srcOffset = StagingBuffer.GetBindOffset();
-			Region.size = StagingBuffer.GetSize();
-			Region.dstOffset = GObjVB.GetBindOffset();
-			vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GObjVB.Buffer, 1, &Region);
-		}
-
-		CmdBuffer->End();
-		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
-		CmdBuffer->WaitForFence();
-
-		StagingBuffer.Destroy(GDevice.Device);
-	}
+	MapAndFillBufferSync(FillObj, sizeof(FVertex) * GObj.Faces.size() * 3);
 
 	return true;
 }
@@ -1285,23 +1298,20 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		return false;
 	}
 
-	GVB.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-
-	FBuffer StagingBuffer;
-	StagingBuffer.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
-
+	GTriVB.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	auto FillTri = [](void* Data)
 	{
-		void* Data = StagingBuffer.GetMappedData();
 		check(Data);
 		auto* Vertex = (FVertex*)Data;
 		Vertex[0].x = -0.5f; Vertex[0].y = -0.5f; Vertex[0].z = -1; Vertex[0].Color = 0xffff0000;
 		Vertex[1].x = 0.1f; Vertex[1].y = -0.5f; Vertex[1].z = -1; Vertex[1].Color = 0xff00ff00;
 		Vertex[2].x = 0; Vertex[2].y = 0.5f; Vertex[2].z = -1; Vertex[2].Color = 0xff0000ff;
-	}
+	};
+	MapAndFillBufferSync(FillTri, sizeof(FVertex) * 3);
 
-	GVSUB.Create(GDevice.Device, sizeof(FMatrix4x4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
+	GProjMtxUB.Create(GDevice.Device, sizeof(FMatrix4x4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
 	FMatrix4x4 Project = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
-	memcpy(GVSUB.GetMappedData(), &Project, sizeof(FMatrix4x4));
+	memcpy(GProjMtxUB.GetMappedData(), &Project, sizeof(FMatrix4x4));
 
 	GResizableObjects.Create();
 
@@ -1310,22 +1320,10 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
-
-		{
-			VkBufferCopy Region;
-			MemZero(Region);
-			Region.srcOffset = StagingBuffer.GetBindOffset();
-			Region.size = StagingBuffer.GetSize();
-			Region.dstOffset = GVB.GetBindOffset();
-			vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GVB.Buffer, 1, &Region);
-		}
-
 		CmdBuffer->End();
 		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 		CmdBuffer->WaitForFence();
 	}
-
-	StagingBuffer.Destroy(GDevice.Device);
 
 	return true;
 }
@@ -1392,8 +1390,8 @@ void DoDeinit()
 	GResizableObjects.Destroy();
 	GCmdBufferMgr.Destroy();
 
-	GVB.Destroy(GDevice.Device);
-	GVSUB.Destroy(GDevice.Device);
+	GTriVB.Destroy(GDevice.Device);
+	GProjMtxUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
 
 	GPixelShader.Destroy(GDevice.Device);
