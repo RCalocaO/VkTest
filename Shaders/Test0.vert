@@ -37,8 +37,8 @@ void main()
 	vec4 ProjMat3 = vec4(0.0, 0.0, -0.10001, 0.0);
 
 	mat4 ProjMat = mat4(ProjMat0, ProjMat1, ProjMat2, ProjMat3);
-	gl_Position = ProjMat * Position;
-	//gl_Position = VSUB.ProjectionMtx * Position;
+	//gl_Position = ProjMat * Position;
+	gl_Position = VSUB.ProjectionMtx * Position;
 
 	Color = InColor;
 }

@@ -10,6 +10,10 @@ struct FCmdBuffer;
 
 static FBuffer GObjVB;
 static Obj::FObj GObj;
+FDescriptorPool GDescriptorPool;
+FBuffer GTriVB;
+FBuffer GProjMtxUB;
+bool GQuitting = false;
 
 static bool GSkipValidation = false;
 
@@ -90,6 +94,31 @@ struct FTestPSO : public FPSO
 		Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		OutBindings.push_back(Binding);
 	}
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+		VkPipelineShaderStageCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		Info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		Info.module = VS.ShaderModule;
+		Info.pName = "main";
+		OutShaderStages.push_back(Info);
+
+		if (PS.ShaderModule != VK_NULL_HANDLE)
+		{
+			MemZero(Info);
+			Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			Info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+			Info.module = PS.ShaderModule;
+			Info.pName = "main";
+			OutShaderStages.push_back(Info);
+		}
+	}
+/*
+	void UpdateDS(const FMatrix4x4& Mtx)
+	{
+	}*/
 };
 FTestPSO GTestPSO;
 
@@ -100,32 +129,12 @@ struct FVertex
 };
 
 
-FBuffer GTriVB;
-FBuffer GProjMtxUB;
-
 struct FGfxPipeline
 {
 	void Create(VkDevice Device, FPSO* PSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
 	{
-		VkPipelineShaderStageCreateInfo ShaderInfo[2];
-		MemZero(ShaderInfo);
-		{
-			VkPipelineShaderStageCreateInfo* Info = ShaderInfo;
-			Info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			Info->stage = VK_SHADER_STAGE_VERTEX_BIT;
-			Info->module = PSO->VS.ShaderModule;
-			Info->pName = "main";
-			++Info;
-
-			if (PSO->PS.ShaderModule != VK_NULL_HANDLE)
-			{
-				Info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-				Info->stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-				Info->module = PSO->PS.ShaderModule;
-				Info->pName = "main";
-				++Info;
-			}
-		}
+		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
+		PSO->SetupShaderStages(ShaderStages);
 
 		VkPipelineLayoutCreateInfo CreateInfo;
 		MemZero(CreateInfo);
@@ -267,8 +276,8 @@ struct FGfxPipeline
 		VkGraphicsPipelineCreateInfo PipelineInfo;
 		MemZero(PipelineInfo);
 		PipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		PipelineInfo.stageCount = 2;
-		PipelineInfo.pStages = ShaderInfo;
+		PipelineInfo.stageCount = ShaderStages.size();
+		PipelineInfo.pStages = &ShaderStages[0];
 		PipelineInfo.pVertexInputState = &VIInfo;
 		PipelineInfo.pInputAssemblyState = &IAInfo;
 		//PipelineInfo.pTessellationState = NULL;
@@ -627,24 +636,28 @@ struct FInstance
 		const char* Message,
 		void* UserData)
 	{
-		char s[2048];
 		int n = 0;
 		if (Flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
 		{
+			char s[2048];
 			sprintf_s(s, "<VK>Error: %s\n", Message);
 			++n;
 			::OutputDebugStringA(s);
 		}
 		else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
 		{
+			char s[2048];
 			sprintf_s(s, "<VK>Warn: %s\n", Message);
 			++n;
 			::OutputDebugStringA(s);
 		}
-		else
+		else if (0)
 		{
-			//sprintf_s(s, "<VK>: %s\n", Message);
-			//::OutputDebugStringA(s);
+			uint32 Size = strlen(Message) + 100;
+			auto* s = new char[Size];
+			snprintf(s, Size - 1, "<VK>: %s\n", Message);
+			::OutputDebugStringA(s);
+			delete[] s;
 		}
 
 		return false;
@@ -1295,6 +1308,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
+	GDescriptorPool.Create(GDevice.Device);
 
 	if (!LoadShadersAndGeometry())
 	{
@@ -1333,6 +1347,10 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 void DoRender()
 {
+	if (GQuitting)
+	{
+		return;
+	}
 	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
 	CmdBuffer->Begin();
 
@@ -1342,6 +1360,30 @@ void DoRender()
 
 	CmdBuffer->BeginRenderPass(GResizableObjects.RenderPass.RenderPass, *GResizableObjects.Framebuffers[GSwapchain.AcquiredImageIndex]);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
+
+	{
+		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+
+		VkWriteDescriptorSet DSWrites;
+		{
+			VkDescriptorBufferInfo BufferInfo;
+			MemZero(BufferInfo);
+			BufferInfo.buffer = GProjMtxUB.Buffer;
+			BufferInfo.offset = GProjMtxUB.GetBindOffset();
+			BufferInfo.range = GProjMtxUB.GetSize();
+
+			MemZero(DSWrites);
+			DSWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			DSWrites.dstSet = DescriptorSet;
+			DSWrites.dstBinding = 0;
+			DSWrites.descriptorCount = 1;
+			DSWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			DSWrites.pBufferInfo = &BufferInfo;
+		}
+
+		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrites, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+	}
 	{
 		VkViewport Viewport;
 		MemZero(Viewport);
@@ -1390,12 +1432,18 @@ void DoResize(uint32 Width, uint32 Height)
 
 void DoDeinit()
 {
+	GQuitting = true;
+
+	checkVk(vkDeviceWaitIdle(GDevice.Device));
+
 	GResizableObjects.Destroy();
 	GCmdBufferMgr.Destroy();
 
 	GTriVB.Destroy(GDevice.Device);
 	GProjMtxUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
+
+	GDescriptorPool.Destroy();
 
 	GTestPSO.Destroy(GDevice.Device);
 

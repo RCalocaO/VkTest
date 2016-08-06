@@ -6,9 +6,11 @@
 
 struct FBuffer : public FRecyclableResource
 {
-	void Create(VkDevice InDevice, uint64 Size, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint64 InSize, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
 	{
 		Device = InDevice;
+		Size = InSize;
+
 		VkBufferCreateInfo BufferInfo;
 		MemZero(BufferInfo);
 		BufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -44,11 +46,12 @@ struct FBuffer : public FRecyclableResource
 
 	uint64 GetSize() const
 	{
-		return Reqs.size;
+		return Size;
 	}
 
 	VkDevice Device;
 	VkBuffer Buffer = VK_NULL_HANDLE;
+	uint64 Size = 0;
 	VkMemoryRequirements Reqs;
 	FMemSubAlloc* SubAlloc = nullptr;
 };
@@ -165,6 +168,62 @@ struct FPSO
 	}
 
 	VkDescriptorSetLayout DSLayout = VK_NULL_HANDLE;
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+	}
+};
+
+
+struct FDescriptorPool
+{
+	void Create(VkDevice InDevice)
+	{
+		Device = InDevice;
+
+		std::vector<VkDescriptorPoolSize> PoolSizes;
+		auto AddPool = [&](VkDescriptorType Type, uint32 NumDescriptors)
+		{
+			VkDescriptorPoolSize PoolSize;
+			MemZero(PoolSize);
+			PoolSize.type = Type;
+			PoolSize.descriptorCount = NumDescriptors;
+			PoolSizes.push_back(PoolSize);
+		};
+
+		AddPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768);
+		
+		VkDescriptorPoolCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		Info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+		Info.maxSets = 32768;
+		Info.poolSizeCount = PoolSizes.size();
+		Info.pPoolSizes = &PoolSizes[0];
+		checkVk(vkCreateDescriptorPool(InDevice, &Info, nullptr, &Pool));
+	}
+
+	void Destroy()
+	{
+		vkDestroyDescriptorPool(Device, Pool, nullptr);
+		Pool = VK_NULL_HANDLE;
+	}
+
+	VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout DSLayout)
+	{
+		VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
+		VkDescriptorSetAllocateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		Info.descriptorPool = Pool;
+		Info.descriptorSetCount = 1;
+		Info.pSetLayouts = &DSLayout;
+		checkVk(vkAllocateDescriptorSets(Device, &Info, &DescriptorSet));
+		return DescriptorSet;
+	}
+
+	VkDevice Device = VK_NULL_HANDLE;
+	VkDescriptorPool Pool = VK_NULL_HANDLE;
 };
 
 struct FFence : public FRecyclableResource
