@@ -78,9 +78,20 @@ FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, float NearZ
 }
 
 
-static FShader GVertexShader;
-static FShader GPixelShader;
-
+struct FTestPSO : public FPSO
+{
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
+	{
+		VkDescriptorSetLayoutBinding Binding;
+		MemZero(Binding);
+		Binding.binding = 0;
+		Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		Binding.descriptorCount = 1;
+		Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		OutBindings.push_back(Binding);
+	}
+};
+FTestPSO GTestPSO;
 
 struct FVertex
 {
@@ -94,34 +105,34 @@ FBuffer GProjMtxUB;
 
 struct FGfxPipeline
 {
-	void Create(VkDevice Device, FShader* VS, FShader* PS, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	void Create(VkDevice Device, FPSO* PSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
 	{
-		VkPipelineLayoutCreateInfo CreateInfo;
-		MemZero(CreateInfo);
-		CreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-
-		checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
-
 		VkPipelineShaderStageCreateInfo ShaderInfo[2];
 		MemZero(ShaderInfo);
 		{
 			VkPipelineShaderStageCreateInfo* Info = ShaderInfo;
-			check(VS);
 			Info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 			Info->stage = VK_SHADER_STAGE_VERTEX_BIT;
-			Info->module = VS->ShaderModule;
+			Info->module = PSO->VS.ShaderModule;
 			Info->pName = "main";
 			++Info;
 
-			if (PS)
+			if (PSO->PS.ShaderModule != VK_NULL_HANDLE)
 			{
 				Info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 				Info->stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-				Info->module = PS->ShaderModule;
+				Info->module = PSO->PS.ShaderModule;
 				Info->pName = "main";
 				++Info;
 			}
 		}
+
+		VkPipelineLayoutCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		CreateInfo.setLayoutCount = 1;
+		CreateInfo.pSetLayouts = &PSO->DSLayout;
+		checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
 
 		VkVertexInputBindingDescription VBDesc;
 		MemZero(VBDesc);
@@ -1155,7 +1166,7 @@ struct FResizableObjects
 	{
 		RenderPass.Create(GDevice.Device);
 
-		GGfxPipeline.Create(GDevice.Device, &GVertexShader, &GPixelShader, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
+		GGfxPipeline.Create(GDevice.Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
 			Framebuffers[Index] = new FFramebuffer;
@@ -1241,16 +1252,8 @@ static bool LoadShadersAndGeometry()
 #undef CMD_LINE
 	}
 
-	if (!GVertexShader.Create("vert.spv", GDevice.Device))
-	{
-		return false;
-	}
-
-	if (!GPixelShader.Create("frag.spv", GDevice.Device))
-	{
-		return false;
-	}
-
+	check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
+	
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
 	{
 		return false;
@@ -1394,8 +1397,7 @@ void DoDeinit()
 	GProjMtxUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
 
-	GPixelShader.Destroy(GDevice.Device);
-	GVertexShader.Destroy(GDevice.Device);
+	GTestPSO.Destroy(GDevice.Device);
 
 	GSwapchain.Destroy();
 

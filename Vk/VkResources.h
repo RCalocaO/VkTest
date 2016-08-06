@@ -105,7 +105,6 @@ struct FShader : public FRecyclableResource
 		CreateInfo.pCode = (uint32*)&SpirV[0];
 
 		checkVk(vkCreateShaderModule(Device, &CreateInfo, nullptr, &ShaderModule));
-
 		return true;
 	}
 
@@ -116,9 +115,57 @@ struct FShader : public FRecyclableResource
 	}
 
 	std::vector<char> SpirV;
-	VkShaderModule ShaderModule;
+	VkShaderModule ShaderModule = VK_NULL_HANDLE;
 };
 
+
+struct FPSO
+{
+	FShader VS;
+	FShader PS;
+
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
+	{
+	}
+
+	void Destroy(VkDevice Device)
+	{
+		if (DSLayout != VK_NULL_HANDLE)
+		{
+			vkDestroyDescriptorSetLayout(Device, DSLayout, nullptr);
+		}
+
+		PS.Destroy(Device);
+		VS.Destroy(Device);
+	}
+
+	bool CreateVSPS(VkDevice Device, const char* VSFilename, const char* PSFilename)
+	{
+		if (!VS.Create(VSFilename, Device))
+		{
+			return false;
+		}
+
+		if (!PS.Create(PSFilename, Device))
+		{
+			return false;
+		}
+
+		std::vector<VkDescriptorSetLayoutBinding> DSBindings;
+		SetupLayoutBindings(DSBindings);
+
+		VkDescriptorSetLayoutCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		Info.bindingCount = DSBindings.size();
+		Info.pBindings = DSBindings.empty() ? nullptr : &DSBindings[0];
+		checkVk(vkCreateDescriptorSetLayout(Device, &Info, nullptr, &DSLayout));
+
+		return true;
+	}
+
+	VkDescriptorSetLayout DSLayout = VK_NULL_HANDLE;
+};
 
 struct FFence : public FRecyclableResource
 {
