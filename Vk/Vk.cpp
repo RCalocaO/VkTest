@@ -12,7 +12,14 @@ static FBuffer GObjVB;
 static Obj::FObj GObj;
 FDescriptorPool GDescriptorPool;
 FBuffer GTriVB;
-FBuffer GProjMtxUB;
+
+struct FViewUB
+{
+	FMatrix4x4 View;
+	FMatrix4x4 Proj;
+};
+FBuffer GViewUB;
+
 bool GQuitting = false;
 
 static bool GSkipValidation = false;
@@ -1327,9 +1334,12 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	};
 	MapAndFillBufferSync(&GTriVB, FillTri, sizeof(FVertex) * 3);
 
-	GProjMtxUB.Create(GDevice.Device, sizeof(FMatrix4x4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
-	FMatrix4x4 Project = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
-	memcpy(GProjMtxUB.GetMappedData(), &Project, sizeof(FMatrix4x4));
+	GViewUB.Create(GDevice.Device, sizeof(FMatrix4x4) * 2, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
+
+	FViewUB& ViewUB = *(FViewUB*)GViewUB.GetMappedData();
+	ViewUB.View = FMatrix4x4::GetIdentity();
+	ViewUB.View.Values[3 * 4 + 2] = -2;
+	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
 
 	GResizableObjects.Create();
 
@@ -1369,9 +1379,9 @@ void DoRender()
 		{
 			VkDescriptorBufferInfo BufferInfo;
 			MemZero(BufferInfo);
-			BufferInfo.buffer = GProjMtxUB.Buffer;
-			BufferInfo.offset = GProjMtxUB.GetBindOffset();
-			BufferInfo.range = GProjMtxUB.GetSize();
+			BufferInfo.buffer = GViewUB.Buffer;
+			BufferInfo.offset = GViewUB.GetBindOffset();
+			BufferInfo.range = GViewUB.GetSize();
 
 			MemZero(DSWrites);
 			DSWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1441,7 +1451,7 @@ void DoDeinit()
 	GCmdBufferMgr.Destroy();
 
 	GTriVB.Destroy(GDevice.Device);
-	GProjMtxUB.Destroy(GDevice.Device);
+	GViewUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
 
 	GDescriptorPool.Destroy();

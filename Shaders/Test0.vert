@@ -12,8 +12,9 @@ float4 Main(float4 Pos : POSITION) : SV_POSITION
 
 layout (binding = 0, set = 0) uniform UB
 {
+	mat4 ViewMtx;
 	mat4 ProjectionMtx;
-} VSUB;
+} ViewUB;
 
 
 layout (location = 0) in vec3 InPosition;
@@ -29,7 +30,8 @@ void main()
 	vec4 ViewMat3 = vec4(0.0, 0.0, -2.0, 1.0);
 
 	mat4 ViewMat = mat4(ViewMat0, ViewMat1, ViewMat2, ViewMat3);
-	vec4 Position = ViewMat * vec4(InPosition.xyz, 1.0);
+	//vec4 Position = ViewMat * vec4(InPosition.xyz, 1.0);
+	vec4 Position = ViewUB.ViewMtx * vec4(InPosition.xyz, 1.0);
 
 	vec4 ProjMat0 = vec4(0.8823998, 0.0, 0.0, 0.0);
 	vec4 ProjMat1 = vec4(0.0, 1.73205090, 0.0, 0.0);
@@ -38,7 +40,7 @@ void main()
 
 	mat4 ProjMat = mat4(ProjMat0, ProjMat1, ProjMat2, ProjMat3);
 	//gl_Position = ProjMat * Position;
-	gl_Position = VSUB.ProjectionMtx * Position;
+	gl_Position = ViewUB.ProjectionMtx * Position;
 
 	Color = InColor;
 }
