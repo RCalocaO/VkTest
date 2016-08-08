@@ -60,7 +60,7 @@ protected:
 class FMemPage
 {
 public:
-	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex, bool bInMapped);
+	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, bool bInMapped);
 
 	FMemSubAlloc* TryAlloc(uint64 Size, uint64 Alignment);
 
@@ -77,6 +77,7 @@ public:
 	}
 
 protected:
+	uint32 MemTypeIndex;
 	std::vector<FRange> FreeList;
 	std::list<FMemSubAlloc*> SubAllocations;
 

@@ -745,8 +745,9 @@ FInstance GInstance;
 
 
 
-FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 MemTypeIndex, bool bInMapped)
+FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, bool bInMapped)
 	: Allocation(InDevice, Size, MemTypeIndex, bInMapped)
+	, MemTypeIndex(InMemTypeIndex)
 {
 	FRange Block;
 	Block.Begin = 0;
@@ -766,7 +767,7 @@ FMemSubAlloc* FMemPage::TryAlloc(uint64 Size, uint64 Alignment)
 	for (auto& Range : FreeList)
 	{
 		uint64 AlignedOffset = Align(Range.Begin, Alignment);
-		if (AlignedOffset + Size < Range.End)
+		if (AlignedOffset + Size <= Range.End)
 		{
 			auto* SubAlloc = new FMemSubAlloc(Range.Begin, AlignedOffset, Size, this);
 			SubAllocations.push_back(SubAlloc);
@@ -1204,7 +1205,7 @@ FResizableObjects GResizableObjects;
 
 
 template <typename TFillLambda>
-void MapAndFillBufferSync(TFillLambda Fill, uint32 Size)
+void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 {
 	FBuffer StagingBuffer;
 	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
@@ -1221,8 +1222,8 @@ void MapAndFillBufferSync(TFillLambda Fill, uint32 Size)
 		MemZero(Region);
 		Region.srcOffset = StagingBuffer.GetBindOffset();
 		Region.size = StagingBuffer.GetSize();
-		Region.dstOffset = GObjVB.GetBindOffset();
-		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GObjVB.Buffer, 1, &Region);
+		Region.dstOffset = DestBuffer->GetBindOffset();
+		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestBuffer->Buffer, 1, &Region);
 	}
 
 	CmdBuffer->End();
@@ -1271,7 +1272,7 @@ static bool LoadShadersAndGeometry()
 	{
 		return false;
 	}
-
+	//GObj.Faces.resize(1);
 	GObjVB.Create(GDevice.Device, sizeof(FVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 
 	auto FillObj = [](void* Data)
@@ -1292,7 +1293,7 @@ static bool LoadShadersAndGeometry()
 		}
 	};
 
-	MapAndFillBufferSync(FillObj, sizeof(FVertex) * GObj.Faces.size() * 3);
+	MapAndFillBufferSync(&GObjVB, FillObj, sizeof(FVertex) * GObj.Faces.size() * 3);
 
 	return true;
 }
@@ -1324,7 +1325,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		Vertex[1].x = 0.1f; Vertex[1].y = -0.5f; Vertex[1].z = -1; Vertex[1].Color = 0xff00ff00;
 		Vertex[2].x = 0; Vertex[2].y = 0.5f; Vertex[2].z = -1; Vertex[2].Color = 0xff0000ff;
 	};
-	MapAndFillBufferSync(FillTri, sizeof(FVertex) * 3);
+	MapAndFillBufferSync(&GTriVB, FillTri, sizeof(FVertex) * 3);
 
 	GProjMtxUB.Create(GDevice.Device, sizeof(FMatrix4x4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
 	FMatrix4x4 Project = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
