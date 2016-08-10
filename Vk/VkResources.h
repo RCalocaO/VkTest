@@ -21,7 +21,7 @@ struct FBuffer : public FRecyclableResource
 
 		vkGetBufferMemoryRequirements(Device, Buffer, &Reqs);
 
-		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags);
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, false);
 
 		vkBindBufferMemory(Device, Buffer, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
@@ -52,6 +52,60 @@ struct FBuffer : public FRecyclableResource
 	VkDevice Device;
 	VkBuffer Buffer = VK_NULL_HANDLE;
 	uint64 Size = 0;
+	VkMemoryRequirements Reqs;
+	FMemSubAlloc* SubAlloc = nullptr;
+};
+
+
+struct FImage : public FRecyclableResource
+{
+	void Create(VkDevice InDevice, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	{
+		Device = InDevice;
+
+		VkImageCreateInfo ImageInfo;
+		MemZero(ImageInfo);
+		ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		ImageInfo.imageType = VK_IMAGE_TYPE_2D;
+		ImageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+		ImageInfo.extent.width = 256;
+		ImageInfo.extent.height = 256;
+		ImageInfo.extent.depth = 1;
+		ImageInfo.mipLevels = 1;
+		ImageInfo.arrayLayers = 1;
+		ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		ImageInfo.usage = UsageFlags;
+		ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		checkVk(vkCreateImage(Device, &ImageInfo, nullptr, &Image));
+
+		vkGetImageMemoryRequirements(Device, Image, &Reqs);
+
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, true);
+
+		vkBindImageMemory(Device, Image, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
+	}
+
+	void Destroy(VkDevice Device)
+	{
+		vkDestroyImage(Device, Image, nullptr);
+		Image = VK_NULL_HANDLE;
+
+		SubAlloc->Release();
+	}
+
+	void* GetMappedData()
+	{
+		return SubAlloc->GetMappedData();
+	}
+
+	uint64 GetBindOffset()
+	{
+		return SubAlloc->GetBindOffset();
+	}
+
+	VkDevice Device;
+	VkImage Image = VK_NULL_HANDLE;
 	VkMemoryRequirements Reqs;
 	FMemSubAlloc* SubAlloc = nullptr;
 };

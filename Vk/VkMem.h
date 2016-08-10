@@ -142,13 +142,18 @@ struct FMemManager
 
 	void Destroy()
 	{
-		for (auto& Pair : PageMap)
+		auto Free = [&](auto& PageMap)
 		{
-			for (auto* Page : Pair.second)
+			for (auto& Pair : PageMap)
 			{
-				delete Page;
+				for (auto* Page : Pair.second)
+				{
+					delete Page;
+				}
 			}
-		}
+		};
+		Free(BufferPages);
+		Free(ImagePages);
 	}
 
 	uint32 GetMemTypeIndex(uint32 RequestedTypeBits, VkMemoryPropertyFlags PropertyFlags) const
@@ -168,11 +173,11 @@ struct FMemManager
 		return (uint32)-1;
 	}
 
-	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags MemPropertyFlags)
+	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags MemPropertyFlags, bool bImage)
 	{
 		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, MemPropertyFlags);
 
-		auto& Pages = PageMap[MemTypeIndex];
+		auto& Pages = (bImage ? ImagePages : BufferPages)[MemTypeIndex];
 		for (auto& Page : Pages)
 		{
 			auto* SubAlloc = Page->TryAlloc(Reqs.size, Reqs.alignment);
@@ -193,7 +198,10 @@ struct FMemManager
 
 	VkPhysicalDeviceMemoryProperties Properties;
 	VkDevice Device = VK_NULL_HANDLE;
-	std::map<uint32, std::list<FMemPage*>> PageMap;
+
+	// 2 maps (buffer, image) of mem types of pages
+	std::map<uint32, std::list<FMemPage*>> BufferPages;
+	std::map<uint32, std::list<FMemPage*>> ImagePages;
 };
 
 struct FRecyclableResource
