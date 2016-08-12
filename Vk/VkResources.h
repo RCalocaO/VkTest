@@ -59,17 +59,19 @@ struct FBuffer : public FRecyclableResource
 
 struct FImage : public FRecyclableResource
 {
-	void Create(VkDevice InDevice, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
 	{
 		Device = InDevice;
+		Width = InWidth;
+		Height = InHeight;
 
 		VkImageCreateInfo ImageInfo;
 		MemZero(ImageInfo);
 		ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		ImageInfo.imageType = VK_IMAGE_TYPE_2D;
 		ImageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-		ImageInfo.extent.width = 256;
-		ImageInfo.extent.height = 256;
+		ImageInfo.extent.width = Width;
+		ImageInfo.extent.height = Height;
 		ImageInfo.extent.depth = 1;
 		ImageInfo.mipLevels = 1;
 		ImageInfo.arrayLayers = 1;
@@ -106,6 +108,8 @@ struct FImage : public FRecyclableResource
 
 	VkDevice Device;
 	VkImage Image = VK_NULL_HANDLE;
+	uint32 Width = 0;
+	uint32 Height = 0;
 	VkMemoryRequirements Reqs;
 	FMemSubAlloc* SubAlloc = nullptr;
 };

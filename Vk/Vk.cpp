@@ -146,6 +146,7 @@ struct FVertex
 {
 	float x, y, z;
 	uint32 Color;
+	float u, v;
 };
 
 
@@ -169,7 +170,7 @@ struct FGfxPipeline
 		VBDesc.stride = sizeof(FVertex);
 		VBDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-		VkVertexInputAttributeDescription VIADesc[2];
+		VkVertexInputAttributeDescription VIADesc[3];
 		MemZero(VIADesc);
 		//VIADesc.location = 0;
 		VIADesc[0].binding = 0;
@@ -179,13 +180,16 @@ struct FGfxPipeline
 		VIADesc[1].location = 1;
 		VIADesc[1].format = VK_FORMAT_R8G8B8A8_UNORM;
 		VIADesc[1].offset = offsetof(FVertex, Color);
+		VIADesc[2].location = 2;
+		VIADesc[2].format = VK_FORMAT_R32G32_SFLOAT;
+		VIADesc[2].offset = offsetof(FVertex, u);
 
 		VkPipelineVertexInputStateCreateInfo VIInfo;
 		MemZero(VIInfo);
 		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		VIInfo.vertexBindingDescriptionCount = 1;
 		VIInfo.pVertexBindingDescriptions = &VBDesc;
-		VIInfo.vertexAttributeDescriptionCount = 2;
+		VIInfo.vertexAttributeDescriptionCount = sizeof(VIADesc) / sizeof(VIADesc[0]);
 		VIInfo.pVertexAttributeDescriptions = VIADesc;
 
 		VkPipelineInputAssemblyStateCreateInfo IAInfo;
@@ -1178,13 +1182,13 @@ void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayo
 	MemZero(TransferToPresentBarrier);
 	TransferToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	TransferToPresentBarrier.srcAccessMask = SrcMask;
-	TransferToPresentBarrier.dstAccessMask = DstMask;// VK_ACCESS_MEMORY_READ_BIT;
-	TransferToPresentBarrier.oldLayout = SrcLayout;//VK_IMAGE_LAYOUT_UNDEFINED;
-	TransferToPresentBarrier.newLayout = DestLayout;//VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	TransferToPresentBarrier.dstAccessMask = DstMask;
+	TransferToPresentBarrier.oldLayout = SrcLayout;
+	TransferToPresentBarrier.newLayout = DestLayout;
 	TransferToPresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	TransferToPresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	TransferToPresentBarrier.image = Image;
-	TransferToPresentBarrier.subresourceRange.aspectMask = AspectMask;// VK_IMAGE_ASPECT_COLOR_BIT;
+	TransferToPresentBarrier.subresourceRange.aspectMask = AspectMask;;
 	TransferToPresentBarrier.subresourceRange.layerCount = 1;
 	TransferToPresentBarrier.subresourceRange.levelCount = 1;
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
@@ -1225,17 +1229,13 @@ FResizableObjects GResizableObjects;
 
 
 template <typename TFillLambda>
-void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
+void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 {
-	FBuffer StagingBuffer;
 	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	void* Data = StagingBuffer.GetMappedData();
 	check(Data);
 	auto* Vertex = (FVertex*)Data;
 	Fill(Vertex);
-
-	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
-	CmdBuffer->Begin();
 
 	{
 		VkBufferCopy Region;
@@ -1245,6 +1245,15 @@ void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 		Region.dstOffset = DestBuffer->GetBindOffset();
 		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestBuffer->Buffer, 1, &Region);
 	}
+}
+
+template <typename TFillLambda>
+void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
+{
+	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	CmdBuffer->Begin();
+	FBuffer StagingBuffer;
+	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size);
 
 	CmdBuffer->End();
 	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
@@ -1252,7 +1261,6 @@ void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 
 	StagingBuffer.Destroy(GDevice.Device);
 }
-
 
 static bool LoadShadersAndGeometry()
 {
@@ -1308,6 +1316,8 @@ static bool LoadShadersAndGeometry()
 				Vertex->y = GObj.Vs[Face.Corners[Corner].Pos].y;
 				Vertex->z = GObj.Vs[Face.Corners[Corner].Pos].z;
 				Vertex->Color = PackNormalToU32(GObj.VNs[Face.Corners[Corner].Normal]);
+				Vertex->u = GObj.VTs[Face.Corners[Corner].UV].u;
+				Vertex->v = GObj.VTs[Face.Corners[Corner].UV].v;
 				++Vertex;
 			}
 		}
@@ -1356,32 +1366,62 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GResizableObjects.Create();
 
-	GImage.Create(GDevice.Device, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GImage.Create(GDevice.Device, 16, 16, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GImageView.Create(GDevice.Device, GImage.Image, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 	GSampler.Create(GDevice.Device);
 
+	FBuffer StagingBuffer;
 	{
 		// Setup on Present layout
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
-		VkClearColorValue Color;
-		Color.float32[0] = 1.0f;	// B
-		Color.float32[1] = 0.0f;	// G
-		Color.float32[2] = 1.0f;	// R
-		Color.float32[3] = 0.0f;
-		VkImageSubresourceRange Range;
-		MemZero(Range);
-		Range.layerCount = 1;
-		Range.levelCount = 1;
-		Range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-		vkCmdClearColorImage(CmdBuffer->CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
-		TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+		{
+			// Fill texture
+/*
+			VkClearColorValue Color;
+			Color.float32[0] = 1.0f;	// B
+			Color.float32[1] = 0.0f;	// G
+			Color.float32[2] = 1.0f;	// R
+			Color.float32[3] = 0.0f;
+			VkImageSubresourceRange Range;
+			MemZero(Range);
+			Range.layerCount = 1;
+			Range.levelCount = 1;
+			Range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+*/
+			TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			//vkCmdClearColorImage(CmdBuffer->CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
+
+			StagingBuffer.Create(GDevice.Device, GImage.Reqs.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+			uint32* P = (uint32*)StagingBuffer.GetMappedData();
+			for (uint32 y = 0; y < GImage.Height; ++y)
+			{
+				for (uint32 x = 0; x < GImage.Width; ++x)
+				{
+					*P = (y % 256) * 16 - 1;
+					++P;
+				}
+			}
+			VkBufferImageCopy Region;
+			MemZero(Region);
+			Region.bufferOffset = StagingBuffer.GetBindOffset();
+			Region.bufferRowLength = 0;// GImage.Width;
+			Region.bufferImageHeight = 0;// GImage.Height;
+			Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			Region.imageSubresource.layerCount = 1;
+			Region.imageExtent.width = GImage.Width;
+			Region.imageExtent.height = GImage.Height;
+			Region.imageExtent.depth = 1;
+			vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+
+			TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+		}
 		CmdBuffer->End();
 		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 		CmdBuffer->WaitForFence();
 	}
+	StagingBuffer.Destroy(GDevice.Device);
 
 	return true;
 }

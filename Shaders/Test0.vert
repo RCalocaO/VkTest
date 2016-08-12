@@ -19,8 +19,10 @@ layout (binding = 0, set = 0) uniform UB
 
 layout (location = 0) in vec3 InPosition;
 layout (location = 1) in vec4 InColor;
+layout (location = 2) in vec2 InUVs;
 
 layout (location = 0) out vec4 Color;
+layout (location = 1) out vec2 UVs;
 
 void main()
 {
@@ -41,6 +43,7 @@ void main()
 	mat4 ProjMat = mat4(ProjMat0, ProjMat1, ProjMat2, ProjMat3);
 	//gl_Position = ProjMat * Position;
 	gl_Position = ViewUB.ProjectionMtx * Position;
+	UVs = InUVs;
 
 	Color = InColor;
 }
