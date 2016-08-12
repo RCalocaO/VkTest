@@ -143,6 +143,43 @@ struct FImageView
 	}
 };
 
+struct FSampler
+{
+	VkSampler Sampler = VK_NULL_HANDLE;
+	VkDevice Device = VK_NULL_HANDLE;
+
+	void Create(VkDevice InDevice)
+	{
+		Device = InDevice;
+
+		VkSamplerCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		//VkSamplerCreateFlags    flags;
+		//VkFilter                magFilter;
+		//VkFilter                minFilter;
+		//VkSamplerMipmapMode     mipmapMode;
+		//VkSamplerAddressMode    addressModeU;
+		//VkSamplerAddressMode    addressModeV;
+		//VkSamplerAddressMode    addressModeW;
+		//float                   mipLodBias;
+		//VkBool32                anisotropyEnable;
+		//float                   maxAnisotropy;
+		//VkBool32                compareEnable;
+		//VkCompareOp             compareOp;
+		//float                   minLod;
+		//float                   maxLod;
+		//VkBorderColor           borderColor;
+		//VkBool32                unnormalizedCoordinates;
+		checkVk(vkCreateSampler(Device, &Info, nullptr, &Sampler));
+	}
+
+	void Destroy()
+	{
+		vkDestroySampler(Device, Sampler, nullptr);
+		Sampler = VK_NULL_HANDLE;
+	}
+};
 
 struct FShader : public FRecyclableResource
 {
@@ -246,7 +283,10 @@ struct FDescriptorPool
 		};
 
 		AddPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768);
-		
+		AddPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768);
+		AddPool(VK_DESCRIPTOR_TYPE_SAMPLER, 32768);
+		AddPool(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 32768);
+
 		VkDescriptorPoolCreateInfo Info;
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;

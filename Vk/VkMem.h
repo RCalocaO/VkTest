@@ -199,7 +199,6 @@ struct FMemManager
 	VkPhysicalDeviceMemoryProperties Properties;
 	VkDevice Device = VK_NULL_HANDLE;
 
-	// 2 maps (buffer, image) of mem types of pages
 	std::map<uint32, std::list<FMemPage*>> BufferPages;
 	std::map<uint32, std::list<FMemPage*>> ImagePages;
 };
