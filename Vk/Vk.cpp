@@ -852,32 +852,6 @@ void FMemPage::Release(FMemSubAlloc* SubAlloc)
 
 FMemManager GMemMgr;
 
-/*
-struct FBuffer : public FRecyclableResource
-{
-	VkBuffer Buffer = VK_NULL_HANDLE;
-	VkDevice Device = VK_NULL_HANDLE;
-
-	void Create(VkDevice InDevice, VkDeviceSize Size)
-	{
-		Device = InDevice;
-
-		VkBufferCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		Info.size = Size;
-		Info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		Info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		checkVk(vkCreateBuffer(Device, &Info, nullptr, &Buffer));
-	}
-
-	void Destroy()
-	{
-		vkDestroyBuffer(Device, Buffer, nullptr);
-		Buffer = VK_NULL_HANDLE;
-	}
-};*/
 
 struct FSwapchain
 {
@@ -1084,41 +1058,6 @@ struct FSwapchain
 FSwapchain GSwapchain;
 
 
-struct FFramebuffer : public FRecyclableResource
-{
-	VkFramebuffer Framebuffer = VK_NULL_HANDLE;
-	VkDevice Device = VK_NULL_HANDLE;
-
-	void CreateColorOnly(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, uint32 InWidth, uint32 InHeight)
-	{
-		Device = InDevice;
-		Width = InWidth;
-		Height = InHeight;
-
-		VkFramebufferCreateInfo CreateInfo;
-		MemZero(CreateInfo);
-		CreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		CreateInfo.renderPass = RenderPass;
-		CreateInfo.attachmentCount = 1;
-		CreateInfo.pAttachments = &ColorAttachment;
-		CreateInfo.width = Width;
-		CreateInfo.height = Height;
-		CreateInfo.layers = 1;
-
-		checkVk(vkCreateFramebuffer(Device, &CreateInfo, nullptr, &Framebuffer));
-	}
-
-	void Destroy()
-	{
-		vkDestroyFramebuffer(Device, Framebuffer, nullptr);
-		Framebuffer = VK_NULL_HANDLE;
-	}
-
-	uint32 Width = 0;
-	uint32 Height = 0;
-};
-
-
 void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer)
 {
 	check(State == EState::Beginned);
@@ -1138,56 +1077,6 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 
 	State = EState::InsideRenderPass;
 }
-
-struct FRenderPass : public FRecyclableResource
-{
-	VkRenderPass RenderPass = VK_NULL_HANDLE;
-	VkDevice Device = VK_NULL_HANDLE;
-
-	void Create(VkDevice InDevice)
-	{
-		Device = InDevice;
-
-		VkAttachmentDescription ColorAttachmentDesc;
-		MemZero(ColorAttachmentDesc);
-		ColorAttachmentDesc.format = VK_FORMAT_R8G8B8A8_UNORM;
-		ColorAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-		ColorAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		ColorAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		ColorAttachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		ColorAttachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		ColorAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		ColorAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference ColorAttachmentRef;
-		MemZero(ColorAttachmentRef);
-		ColorAttachmentRef.attachment = 0;
-		ColorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		VkSubpassDescription Subpass;
-		MemZero(Subpass);
-		Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		Subpass.colorAttachmentCount = 1;
-		Subpass.pColorAttachments = &ColorAttachmentRef;
-
-		VkRenderPassCreateInfo RenderPassInfo;
-		MemZero(RenderPassInfo);
-		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		RenderPassInfo.attachmentCount = 1;
-		RenderPassInfo.pAttachments = &ColorAttachmentDesc;
-		RenderPassInfo.subpassCount = 1;
-		RenderPassInfo.pSubpasses = &Subpass;
-
-		checkVk(vkCreateRenderPass(Device, &RenderPassInfo, nullptr, &RenderPass));
-	}
-
-	void Destroy()
-	{
-		vkDestroyRenderPass(Device, RenderPass, nullptr);
-		RenderPass = VK_NULL_HANDLE;
-	}
-};
-
 
 void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
 {
