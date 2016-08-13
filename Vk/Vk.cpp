@@ -1415,7 +1415,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			{
 				for (uint32 x = 0; x < GImage.Width; ++x)
 				{
-					*P = ((y + 1) % 256) * 16 - 1;
+					uint8 Byte = uint8(max(y / (float)GImage.Height, x / (float)GImage.Width) * 255.0f);
+					*P = Byte | (Byte << 8) | (Byte << 16);
 					++P;
 				}
 			}
@@ -1457,6 +1458,14 @@ void DoRender()
 
 	CmdBuffer->BeginRenderPass(GResizableObjects.RenderPass.RenderPass, *GResizableObjects.Framebuffers[GSwapchain.AcquiredImageIndex]);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
+
+	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
+	static float AngleDegrees = 0;
+	{
+		AngleDegrees += 360.0f / 10.0f / 60.0f;
+		AngleDegrees = fmod(AngleDegrees, 360.0f);
+	}
+	ObjUB.Obj = FMatrix4x4::GetRotationY(ToRadians(AngleDegrees));
 
 	{
 		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);

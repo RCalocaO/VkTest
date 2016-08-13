@@ -5,6 +5,7 @@
 #include <map>
 #include <algorithm>
 
+typedef uint8_t uint8;
 typedef uint32_t uint32;
 typedef int32_t int32;
 typedef uint64_t uint64;
@@ -161,6 +162,36 @@ struct FMatrix4x4
 		New.Values[5] = 1;
 		New.Values[10] = 1;
 		New.Values[15] = 1;
+		return New;
+	}
+
+	static FMatrix4x4 GetRotationY(float AngleRad)
+	{
+		FMatrix4x4 New;
+		MemZero(New);
+		float Cos = cos(AngleRad);
+		float Sin = sin(AngleRad);
+		New.Rows[0].x = Cos;
+		New.Rows[0].z = Sin;
+		New.Rows[1].y = 1;
+		New.Rows[2].x = -Sin;
+		New.Rows[2].z = Cos;
+		New.Rows[3].w = 1;
+		return New;
+	}
+
+	static FMatrix4x4 GetRotationZ(float AngleRad)
+	{
+		FMatrix4x4 New;
+		MemZero(New);
+		float Cos = cos(AngleRad);
+		float Sin = sin(AngleRad);
+		New.Rows[0].x = Cos;
+		New.Rows[0].y = -Sin;
+		New.Rows[1].x = Sin;
+		New.Rows[1].y = Cos;
+		New.Rows[2].z = 1;
+		New.Rows[3].w = 1;
 		return New;
 	}
 

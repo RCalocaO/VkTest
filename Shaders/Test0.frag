@@ -22,5 +22,5 @@ layout(set = 0, binding = 2) uniform sampler2D Texture;
 
 void main()
 {
-	ColorOut = texture(Texture, UVs);
+	ColorOut = texture(Texture, UVs) * ColorIn;
 }
