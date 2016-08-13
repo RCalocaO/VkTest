@@ -59,7 +59,7 @@ struct FBuffer : public FRecyclableResource
 
 struct FImage : public FRecyclableResource
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
 	{
 		Device = InDevice;
 		Width = InWidth;
@@ -69,7 +69,7 @@ struct FImage : public FRecyclableResource
 		MemZero(ImageInfo);
 		ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		ImageInfo.imageType = VK_IMAGE_TYPE_2D;
-		ImageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+		ImageInfo.format = Format;
 		ImageInfo.extent.width = Width;
 		ImageInfo.extent.height = Height;
 		ImageInfo.extent.depth = 1;
@@ -430,6 +430,27 @@ struct FFramebuffer : public FRecyclableResource
 		checkVk(vkCreateFramebuffer(Device, &CreateInfo, nullptr, &Framebuffer));
 	}
 
+	void CreateColorAndDepth(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, VkImageView DepthAttachment, uint32 InWidth, uint32 InHeight)
+	{
+		Device = InDevice;
+		Width = InWidth;
+		Height = InHeight;
+
+		VkImageView Attachments[2] = {ColorAttachment, DepthAttachment};
+
+		VkFramebufferCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		CreateInfo.renderPass = RenderPass;
+		CreateInfo.attachmentCount = 2;
+		CreateInfo.pAttachments = Attachments;
+		CreateInfo.width = Width;
+		CreateInfo.height = Height;
+		CreateInfo.layers = 1;
+
+		checkVk(vkCreateFramebuffer(Device, &CreateInfo, nullptr, &Framebuffer));
+	}
+
 	void Destroy()
 	{
 		vkDestroyFramebuffer(Device, Framebuffer, nullptr);
@@ -450,33 +471,46 @@ struct FRenderPass : public FRecyclableResource
 	{
 		Device = InDevice;
 
-		VkAttachmentDescription ColorAttachmentDesc;
-		MemZero(ColorAttachmentDesc);
-		ColorAttachmentDesc.format = VK_FORMAT_R8G8B8A8_UNORM;
-		ColorAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-		ColorAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		ColorAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		ColorAttachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		ColorAttachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		ColorAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		ColorAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VkAttachmentDescription AttachmentDesc[2];
+		MemZero(AttachmentDesc);
+		AttachmentDesc[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+		AttachmentDesc[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		AttachmentDesc[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		AttachmentDesc[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		AttachmentDesc[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		AttachmentDesc[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		AttachmentDesc[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		AttachmentDesc[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentReference ColorAttachmentRef;
-		MemZero(ColorAttachmentRef);
-		ColorAttachmentRef.attachment = 0;
-		ColorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		AttachmentDesc[1].format = VK_FORMAT_D32_SFLOAT;
+		AttachmentDesc[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		AttachmentDesc[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		AttachmentDesc[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		AttachmentDesc[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		AttachmentDesc[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		AttachmentDesc[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		AttachmentDesc[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference AttachmentRef[2];
+		MemZero(AttachmentRef);
+		AttachmentRef[0].attachment = 0;
+		AttachmentRef[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		AttachmentRef[1].attachment = 1;
+		AttachmentRef[1].layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 		VkSubpassDescription Subpass;
 		MemZero(Subpass);
 		Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		Subpass.colorAttachmentCount = 1;
-		Subpass.pColorAttachments = &ColorAttachmentRef;
+		Subpass.pColorAttachments = &AttachmentRef[0];
+		Subpass.pDepthStencilAttachment = &AttachmentRef[1];
 
 		VkRenderPassCreateInfo RenderPassInfo;
 		MemZero(RenderPassInfo);
 		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		RenderPassInfo.attachmentCount = 1;
-		RenderPassInfo.pAttachments = &ColorAttachmentDesc;
+		RenderPassInfo.attachmentCount = sizeof(AttachmentDesc) / sizeof(AttachmentDesc[0]);
+		RenderPassInfo.pAttachments = AttachmentDesc;
 		RenderPassInfo.subpassCount = 1;
 		RenderPassInfo.pSubpasses = &Subpass;
 

@@ -27,7 +27,9 @@ struct FObjUB
 FBuffer GObjUB;
 
 FImage GImage;
+FImage GDepthImage;
 FImageView GImageView;
+FImageView GDepthImageView;
 FSampler GSampler;
 
 
@@ -678,15 +680,15 @@ struct FInstance
 		{
 			char s[2048];
 			sprintf_s(s, "<VK>Error: %s\n", Message);
-			++n;
 			::OutputDebugStringA(s);
+			++n;
 		}
 		else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
 		{
 			char s[2048];
 			sprintf_s(s, "<VK>Warn: %s\n", Message);
-			++n;
 			::OutputDebugStringA(s);
+			++n;
 		}
 		else if (0)
 		{
@@ -1065,13 +1067,15 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 	static uint32 N = 0;
 	N = (N  + 1) % 256;
 
-	VkClearValue ClearValues[] = { { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
+	VkClearValue ClearValues[2] = { { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
+	ClearValues[1].depthStencil.depth = 1.0f;
+	ClearValues[1].depthStencil.stencil = 0;
 	VkRenderPassBeginInfo BeginInfo = {};
 	BeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	BeginInfo.renderPass = RenderPass;
 	BeginInfo.framebuffer = Framebuffer.Framebuffer;
 	BeginInfo.renderArea = { 0, 0, Framebuffer.Width, Framebuffer.Height };
-	BeginInfo.clearValueCount = 1;
+	BeginInfo.clearValueCount = 2;
 	BeginInfo.pClearValues = ClearValues;
 	vkCmdBeginRenderPass(CmdBuffer, &BeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1110,7 +1114,7 @@ struct FResizableObjects
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
 			Framebuffers[Index] = new FFramebuffer;
-			Framebuffers[Index]->CreateColorOnly(GDevice.Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+			Framebuffers[Index]->CreateColorAndDepth(GDevice.Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
 		}
 	}
 
@@ -1270,11 +1274,13 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
-	GResizableObjects.Create();
-
-	GImage.Create(GDevice.Device, 16, 16, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GImage.Create(GDevice.Device, 16, 16, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GImageView.Create(GDevice.Device, GImage.Image, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 	GSampler.Create(GDevice.Device);
+	GDepthImage.Create(GDevice.Device, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GDepthImageView.Create(GDevice.Device, GDepthImage.Image, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+	GResizableObjects.Create();
 
 	FBuffer StagingBuffer;
 	{
@@ -1282,6 +1288,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
+		TransitionImage(CmdBuffer, GDepthImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
 		{
 			// Fill texture
 			VkClearColorValue Color;
@@ -1479,6 +1486,9 @@ void DoDeinit()
 	GImage.Destroy(GDevice.Device);
 	GSampler.Destroy();
 	GImageView.Destroy();
+
+	GDepthImageView.Destroy();
+	GDepthImage.Destroy(GDevice.Device);
 
 	GDescriptorPool.Destroy();
 
