@@ -20,6 +20,12 @@ struct FViewUB
 };
 FBuffer GViewUB;
 
+struct FObjUB
+{
+	FMatrix4x4 Obj;
+};
+FBuffer GObjUB;
+
 FImage GImage;
 FImageView GImageView;
 FSampler GSampler;
@@ -108,6 +114,13 @@ struct FTestPSO : public FPSO
 
 		MemZero(Binding);
 		Binding.binding = 1;
+		Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		Binding.descriptorCount = 1;
+		Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		OutBindings.push_back(Binding);
+
+		MemZero(Binding);
+		Binding.binding = 2;
 		//Binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		Binding.descriptorCount = 1;
@@ -1357,12 +1370,16 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	};
 	MapAndFillBufferSync(&GTriVB, FillTri, sizeof(FVertex) * 3);
 
-	GViewUB.Create(GDevice.Device, sizeof(FMatrix4x4) * 2, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &GMemMgr);
+	GViewUB.Create(GDevice.Device, sizeof(FViewUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	GObjUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 
 	FViewUB& ViewUB = *(FViewUB*)GViewUB.GetMappedData();
 	ViewUB.View = FMatrix4x4::GetIdentity();
 	ViewUB.View.Values[3 * 4 + 2] = -2;
 	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.SurfaceResolution.width / (float)GSwapchain.SurfaceResolution.height, 0.1f, 1000.0f);
+
+	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
+	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
 	GResizableObjects.Create();
 
@@ -1378,7 +1395,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
 		{
 			// Fill texture
-/*
 			VkClearColorValue Color;
 			Color.float32[0] = 1.0f;	// B
 			Color.float32[1] = 0.0f;	// G
@@ -1389,9 +1405,9 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			Range.layerCount = 1;
 			Range.levelCount = 1;
 			Range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-*/
+
 			TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-			//vkCmdClearColorImage(CmdBuffer->CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
+			vkCmdClearColorImage(CmdBuffer->CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
 
 			StagingBuffer.Create(GDevice.Device, GImage.Reqs.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 			uint32* P = (uint32*)StagingBuffer.GetMappedData();
@@ -1399,7 +1415,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			{
 				for (uint32 x = 0; x < GImage.Width; ++x)
 				{
-					*P = (y % 256) * 16 - 1;
+					*P = ((y + 1) % 256) * 16 - 1;
 					++P;
 				}
 			}
@@ -1456,6 +1472,12 @@ void DoRender()
 			BufferInfo.range = GViewUB.GetSize();
 			BufferInfos.push_back(BufferInfo);
 
+			MemZero(BufferInfo);
+			BufferInfo.buffer = GObjUB.Buffer;
+			BufferInfo.offset = GObjUB.GetBindOffset();
+			BufferInfo.range = GObjUB.GetSize();
+			BufferInfos.push_back(BufferInfo);
+
 			VkWriteDescriptorSet DSWrite;
 			MemZero(DSWrite);
 			DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1464,6 +1486,15 @@ void DoRender()
 			DSWrite.descriptorCount = 1;
 			DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			DSWrite.pBufferInfo = &BufferInfos[0];
+			DSWrites.push_back(DSWrite);
+
+			MemZero(DSWrite);
+			DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			DSWrite.dstSet = DescriptorSet;
+			DSWrite.dstBinding = 1;
+			DSWrite.descriptorCount = 1;
+			DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			DSWrite.pBufferInfo = &BufferInfos[1];
 			DSWrites.push_back(DSWrite);
 
 			VkDescriptorImageInfo ImageInfo;
@@ -1476,7 +1507,7 @@ void DoRender()
 			MemZero(DSWrite);
 			DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			DSWrite.dstSet = DescriptorSet;
-			DSWrite.dstBinding = 1;
+			DSWrite.dstBinding = 2;
 			DSWrite.descriptorCount = 1;
 			//DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 			DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1544,6 +1575,7 @@ void DoDeinit()
 
 	GTriVB.Destroy(GDevice.Device);
 	GViewUB.Destroy(GDevice.Device);
+	GObjUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
 
 	GImage.Destroy(GDevice.Device);

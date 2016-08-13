@@ -18,7 +18,7 @@ layout (location = 1) in vec2 UVs;
 
 layout (location = 0) out vec4 ColorOut;
 
-layout(binding = 1, set = 0) uniform sampler2D Texture;
+layout(set = 0, binding = 2) uniform sampler2D Texture;
 
 void main()
 {

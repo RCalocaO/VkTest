@@ -176,8 +176,8 @@ struct FMemManager
 	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags MemPropertyFlags, bool bImage)
 	{
 		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, MemPropertyFlags);
-
 		auto& Pages = (bImage ? ImagePages : BufferPages)[MemTypeIndex];
+#if 0
 		for (auto& Page : Pages)
 		{
 			auto* SubAlloc = Page->TryAlloc(Reqs.size, Reqs.alignment);
@@ -186,7 +186,7 @@ struct FMemManager
 				return SubAlloc;
 			}
 		}
-
+#endif
 		const uint64 PageSize = 8 * 1024 * 1024;
 		const bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, bMapped);
