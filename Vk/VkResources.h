@@ -160,9 +160,9 @@ struct FSampler
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		//VkSamplerCreateFlags    flags;
-		//VkFilter                magFilter;
-		//VkFilter                minFilter;
-		//VkSamplerMipmapMode     mipmapMode;
+		Info.magFilter = VK_FILTER_LINEAR;
+		Info.minFilter = VK_FILTER_LINEAR;
+		Info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		//VkSamplerAddressMode    addressModeU;
 		//VkSamplerAddressMode    addressModeV;
 		//VkSamplerAddressMode    addressModeW;
