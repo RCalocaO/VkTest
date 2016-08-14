@@ -1324,7 +1324,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
-	GImage.Create(GDevice.Device, 16, 16, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GImage.Create(GDevice.Device, 16, 16, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GImageView.Create(GDevice.Device, GImage.Image, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 	GSampler.Create(GDevice.Device);
 	GDepthImage.Create(GDevice.Device, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
@@ -1389,6 +1389,34 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	return true;
 }
 
+void TestCompute(FCmdBuffer* CmdBuffer)
+{
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePipeline.Pipeline);
+
+	{
+		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
+
+		VkDescriptorImageInfo ImageInfo;
+		MemZero(ImageInfo);
+		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		ImageInfo.imageView = GImageView.ImageView;
+		//ImageInfo.sampler = GSampler.Sampler;
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescriptorSet;
+		DSWrite.dstBinding = 0;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		DSWrite.pImageInfo = &ImageInfo;
+		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePipeline.PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+	}
+
+	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
+}
+
 void DoRender()
 {
 	if (GQuitting)
@@ -1401,6 +1429,8 @@ void DoRender()
 	GSwapchain.AcquireNextImage();
 
 	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+	TestCompute(CmdBuffer);
 
 	CmdBuffer->BeginRenderPass(GResizableObjects.RenderPass.RenderPass, *GResizableObjects.Framebuffers[GSwapchain.AcquiredImageIndex]);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
