@@ -219,20 +219,47 @@ struct FShader : public FRecyclableResource
 
 struct FPSO
 {
-	FShader VS;
-	FShader PS;
-
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
 	{
 	}
 
-	void Destroy(VkDevice Device)
+	virtual void Destroy(VkDevice Device)
 	{
 		if (DSLayout != VK_NULL_HANDLE)
 		{
 			vkDestroyDescriptorSetLayout(Device, DSLayout, nullptr);
 		}
+	}
 
+	void CreateDescriptorSetLayout(VkDevice Device)
+	{
+		std::vector<VkDescriptorSetLayoutBinding> DSBindings;
+		SetupLayoutBindings(DSBindings);
+
+		VkDescriptorSetLayoutCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		Info.bindingCount = DSBindings.size();
+		Info.pBindings = DSBindings.empty() ? nullptr : &DSBindings[0];
+		checkVk(vkCreateDescriptorSetLayout(Device, &Info, nullptr, &DSLayout));
+	}
+
+	VkDescriptorSetLayout DSLayout = VK_NULL_HANDLE;
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+	}
+};
+
+
+struct FGfxPSO : public FPSO
+{
+	FShader VS;
+	FShader PS;
+
+	virtual void Destroy(VkDevice Device) override
+	{
+		FPSO::Destroy(Device);
 		PS.Destroy(Device);
 		VS.Destroy(Device);
 	}
@@ -249,26 +276,47 @@ struct FPSO
 			return false;
 		}
 
-		std::vector<VkDescriptorSetLayoutBinding> DSBindings;
-		SetupLayoutBindings(DSBindings);
-
-		VkDescriptorSetLayoutCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		Info.bindingCount = DSBindings.size();
-		Info.pBindings = DSBindings.empty() ? nullptr : &DSBindings[0];
-		checkVk(vkCreateDescriptorSetLayout(Device, &Info, nullptr, &DSLayout));
-
+		CreateDescriptorSetLayout(Device);
 		return true;
-	}
-
-	VkDescriptorSetLayout DSLayout = VK_NULL_HANDLE;
-
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
-	{
 	}
 };
 
+struct FComputePSO : public FPSO
+{
+	FShader CS;
+
+	virtual void Destroy(VkDevice Device) override
+	{
+		FPSO::Destroy(Device);
+		CS.Destroy(Device);
+	}
+
+	bool Create(VkDevice Device, const char* CSFilename)
+	{
+		if (!CS.Create(CSFilename, Device))
+		{
+			return false;
+		}
+
+		CreateDescriptorSetLayout(Device);
+		return true;
+	}
+};
+
+struct FBasePipeline
+{
+	VkPipeline Pipeline = VK_NULL_HANDLE;
+	VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
+
+	void Destroy(VkDevice Device)
+	{
+		vkDestroyPipeline(Device, Pipeline, nullptr);
+		Pipeline = VK_NULL_HANDLE;
+
+		vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
+		PipelineLayout = VK_NULL_HANDLE;
+	}
+};
 
 struct FDescriptorPool
 {

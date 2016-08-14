@@ -102,7 +102,7 @@ FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, float NearZ
 }
 
 
-struct FTestPSO : public FPSO
+struct FTestPSO : public FGfxPSO
 {
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
@@ -150,12 +150,34 @@ struct FTestPSO : public FPSO
 			OutShaderStages.push_back(Info);
 		}
 	}
-/*
-	void UpdateDS(const FMatrix4x4& Mtx)
-	{
-	}*/
 };
 FTestPSO GTestPSO;
+
+struct FTestComputePSO : public FComputePSO
+{
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
+	{
+		VkDescriptorSetLayoutBinding Binding;
+		MemZero(Binding);
+		Binding.binding = 0;
+		Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		Binding.descriptorCount = 1;
+		Binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		OutBindings.push_back(Binding);
+	}
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+		VkPipelineShaderStageCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		Info.module = CS.ShaderModule;
+		Info.pName = "main";
+		OutShaderStages.push_back(Info);
+	}
+};
+FTestComputePSO GTestComputePSO;
 
 struct FVertex
 {
@@ -165,9 +187,9 @@ struct FVertex
 };
 
 
-struct FGfxPipeline
+struct FGfxPipeline : public FBasePipeline
 {
-	void Create(VkDevice Device, FPSO* PSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	void Create(VkDevice Device, FGfxPSO* PSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
 	{
 		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 		PSO->SetupShaderStages(ShaderStages);
@@ -334,22 +356,38 @@ struct FGfxPipeline
 
 		checkVk(vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
 	}
-
-	VkPipeline Pipeline = VK_NULL_HANDLE;
-
-	void Destroy(VkDevice Device)
-	{
-		vkDestroyPipeline(Device, Pipeline, nullptr);
-		Pipeline = VK_NULL_HANDLE;
-
-		vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
-		PipelineLayout = VK_NULL_HANDLE;
-	}
-
-	VkPipelineLayout PipelineLayout;
 };
 
 static FGfxPipeline GGfxPipeline;
+
+
+struct FComputePipeline : public FBasePipeline
+{
+	void Create(VkDevice Device, FComputePSO* PSO)
+	{
+		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
+		PSO->SetupShaderStages(ShaderStages);
+		check(ShaderStages.size() == 1);
+
+		VkPipelineLayoutCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		CreateInfo.setLayoutCount = 1;
+		CreateInfo.pSetLayouts = &PSO->DSLayout;
+		checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
+
+		VkComputePipelineCreateInfo PipelineInfo;
+		MemZero(PipelineInfo);
+		PipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		//VkPipelineCreateFlags              flags;
+		PipelineInfo.stage = ShaderStages[0];
+		PipelineInfo.layout = PipelineLayout;
+		//VkPipeline                         basePipelineHandle;
+		//int32_t                            basePipelineIndex;
+		checkVk(vkCreateComputePipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
+	}
+};
+static FComputePipeline GComputePipeline;
 
 struct FDevice
 {
@@ -1111,6 +1149,7 @@ struct FResizableObjects
 		RenderPass.Create(GDevice.Device);
 
 		GGfxPipeline.Create(GDevice.Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
+		GComputePipeline.Create(GDevice.Device, &GTestComputePSO);
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
 			Framebuffers[Index] = new FFramebuffer;
@@ -1128,6 +1167,7 @@ struct FResizableObjects
 
 		RenderPass.Destroy();
 
+		GComputePipeline.Destroy(GDevice.Device);
 		GGfxPipeline.Destroy(GDevice.Device);
 	}
 };
@@ -1197,10 +1237,20 @@ static bool LoadShadersAndGeometry()
 				return false;
 			}
 		}
+
+		{
+			std::string CompilePS = Glslang;
+			CompilePS += CMD_LINE  " ../Shaders/Test0.comp";
+			if (system(CompilePS.c_str()))
+			{
+				return false;
+			}
+		}
 #undef CMD_LINE
 	}
 
 	check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
+	check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
 	
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
 	{
@@ -1492,6 +1542,7 @@ void DoDeinit()
 
 	GDescriptorPool.Destroy();
 
+	GTestComputePSO.Destroy(GDevice.Device);
 	GTestPSO.Destroy(GDevice.Device);
 
 	GSwapchain.Destroy();
