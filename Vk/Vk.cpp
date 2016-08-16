@@ -1451,6 +1451,8 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 {
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePipeline.Pipeline);
 
+	ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
 	{
 		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
 
@@ -1473,6 +1475,8 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
+
+	ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline.Pipeline);
 
@@ -1498,6 +1502,8 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
+
+	ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void DoRender()
