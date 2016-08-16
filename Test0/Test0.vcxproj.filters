@@ -74,5 +74,6 @@
     <None Include="..\Shaders\Test0.frag" />
     <None Include="..\Shaders\Test0.vert" />
     <None Include="..\Shaders\Test0.comp" />
+    <None Include="..\Shaders\TestPost.comp" />
   </ItemGroup>
 </Project>

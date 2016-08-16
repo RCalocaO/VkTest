@@ -179,6 +179,39 @@ struct FTestComputePSO : public FComputePSO
 };
 FTestComputePSO GTestComputePSO;
 
+struct FTestPostComputePSO : public FComputePSO
+{
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
+	{
+		VkDescriptorSetLayoutBinding Binding;
+		MemZero(Binding);
+		Binding.binding = 0;
+		Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		Binding.descriptorCount = 1;
+		Binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		OutBindings.push_back(Binding);
+
+		MemZero(Binding);
+		Binding.binding = 1;
+		Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		Binding.descriptorCount = 1;
+		Binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		OutBindings.push_back(Binding);
+	}
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+		VkPipelineShaderStageCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		Info.module = CS.ShaderModule;
+		Info.pName = "main";
+		OutShaderStages.push_back(Info);
+	}
+};
+FTestPostComputePSO GTestComputePostPSO;
+
 struct FVertex
 {
 	float x, y, z;
@@ -388,6 +421,7 @@ struct FComputePipeline : public FBasePipeline
 	}
 };
 static FComputePipeline GComputePipeline;
+static FComputePipeline GComputePostPipeline;
 
 struct FDevice
 {
@@ -1150,6 +1184,7 @@ struct FResizableObjects
 
 		GGfxPipeline.Create(GDevice.Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
 		GComputePipeline.Create(GDevice.Device, &GTestComputePSO);
+		GComputePostPipeline.Create(GDevice.Device, &GTestComputePostPSO);
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
 			Framebuffers[Index] = new FFramebuffer;
@@ -1167,6 +1202,7 @@ struct FResizableObjects
 
 		RenderPass.Destroy();
 
+		GComputePostPipeline.Destroy(GDevice.Device);
 		GComputePipeline.Destroy(GDevice.Device);
 		GGfxPipeline.Destroy(GDevice.Device);
 	}
@@ -1219,38 +1255,44 @@ static bool LoadShadersAndGeometry()
 		char Glslang[MAX_PATH];
 		sprintf_s(Glslang, "%s\\Bin\\glslangValidator.exe", SDKDir);
 
-#define CMD_LINE " -V -r -H -l "
+		auto DoCompile = [&](const char* InFile)
 		{
-			std::string CompileVS = Glslang;
-			CompileVS += CMD_LINE " ../Shaders/Test0.vert";
-			if (system(CompileVS.c_str()))
+			std::string Compile = Glslang;
+			Compile += " -V -r -H -l ";
+			Compile += InFile;
+			if (system(Compile.c_str()))
 			{
 				return false;
 			}
+
+			return true;
+		};
+
+		if (!DoCompile(" ../Shaders/Test0.vert"))
+		{
+			return false;
 		}
 
+		if (!DoCompile(" ../Shaders/Test0.frag"))
 		{
-			std::string CompilePS = Glslang;
-			CompilePS += CMD_LINE  " ../Shaders/Test0.frag";
-			if (system(CompilePS.c_str()))
-			{
-				return false;
-			}
+			return false;
 		}
 
+		if (!DoCompile(" ../Shaders/Test0.comp"))
 		{
-			std::string CompilePS = Glslang;
-			CompilePS += CMD_LINE  " ../Shaders/Test0.comp";
-			if (system(CompilePS.c_str()))
-			{
-				return false;
-			}
+			return false;
+		}
+
+		if (!DoCompile(" -o TestPost.spv ../Shaders/TestPost.comp"))
+		{
+			return false;
 		}
 #undef CMD_LINE
 	}
 
 	check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
 	check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
+	check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
 	
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
 	{
@@ -1415,6 +1457,32 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
+
+
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline.Pipeline);
+
+	{
+		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePostPSO.DSLayout);
+
+		VkDescriptorImageInfo ImageInfo;
+		MemZero(ImageInfo);
+		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		ImageInfo.imageView = GImageView.ImageView;
+		//ImageInfo.sampler = GSampler.Sampler;
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescriptorSet;
+		DSWrite.dstBinding = 0;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		DSWrite.pImageInfo = &ImageInfo;
+		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePostPipeline.PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+	}
+
+	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
 }
 
 void DoRender()
@@ -1572,6 +1640,7 @@ void DoDeinit()
 
 	GDescriptorPool.Destroy();
 
+	GTestComputePostPSO.Destroy(GDevice.Device);
 	GTestComputePSO.Destroy(GDevice.Device);
 	GTestPSO.Destroy(GDevice.Device);
 
