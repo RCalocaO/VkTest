@@ -37,7 +37,7 @@ bool GQuitting = false;
 
 static bool GSkipValidation = false;
 
-void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask);
+void ImageBarrier(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask);
 
 static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, std::vector<const char*>& OutExtensions)
 {
@@ -51,12 +51,28 @@ static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, 
 
 		checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
 
-		for (auto& Prop : InstanceProperties)
+		const char* ValidationLayers[] =
 		{
-			if (!strcmp(Prop.layerName, "VK_LAYER_LUNARG_standard_validation"))
+			"VK_LAYER_LUNARG_standard_validation",
+			"VK_LAYER_LUNARG_image",
+			"VK_LAYER_LUNARG_object_tracker",
+			"VK_LAYER_LUNARG_parameter_validation",
+			"VK_LAYER_LUNARG_screenshot",
+			"VK_LAYER_LUNARG_swapchain",
+			"VK_LAYER_GOOGLE_threading",
+			"VK_LAYER_GOOGLE_unique_objects",
+		};
+
+		for (auto* DesiredLayer : ValidationLayers)
+		{
+			for (auto& Prop : InstanceProperties)
 			{
-				OutLayers.push_back("VK_LAYER_LUNARG_standard_validation");
-				break;
+				if (!strcmp(Prop.layerName, DesiredLayer))
+				{
+					OutLayers.push_back(DesiredLayer);
+					// Should probably remove it from InstanceProperties array...
+					break;
+				}
 			}
 		}
 	}
@@ -1092,9 +1108,9 @@ struct FSwapchain
 		Range.layerCount = 1;
 		for (uint32 Index = 0; Index < (uint32)Images.size(); ++Index)
 		{
-			TransitionImage(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 			vkCmdClearColorImage(CmdBuffer->CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
-			TransitionImage(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		}
 	}
 
@@ -1154,7 +1170,7 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 	State = EState::InsideRenderPass;
 }
 
-void TransitionImage(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
+void ImageBarrier(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
 {
 	VkImageMemoryBarrier TransferToPresentBarrier;
 	MemZero(TransferToPresentBarrier);
@@ -1380,7 +1396,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
-		TransitionImage(CmdBuffer, GDepthImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+		ImageBarrier(CmdBuffer, GDepthImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
 		{
 			// Fill texture
 			VkClearColorValue Color;
@@ -1394,7 +1410,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			Range.levelCount = 1;
 			Range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-			TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 			vkCmdClearColorImage(CmdBuffer->CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
 
 			StagingBuffer.Create(GDevice.Device, GImage.Reqs.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
@@ -1420,7 +1436,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			Region.imageExtent.depth = 1;
 			vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
 
-			TransitionImage(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		}
 		CmdBuffer->End();
 		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
@@ -1457,7 +1473,6 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
-
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline.Pipeline);
 
@@ -1496,7 +1511,7 @@ void DoRender()
 
 	GSwapchain.AcquireNextImage();
 
-	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	TestCompute(CmdBuffer);
 
@@ -1595,7 +1610,7 @@ void DoRender()
 
 	CmdBuffer->EndRenderPass();
 
-	TransitionImage(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	CmdBuffer->End();
 
