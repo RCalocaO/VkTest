@@ -559,7 +559,7 @@ struct FRenderPass : public FRecyclableResource
 		VkRenderPassCreateInfo RenderPassInfo;
 		MemZero(RenderPassInfo);
 		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		RenderPassInfo.attachmentCount = sizeof(AttachmentDesc) / sizeof(AttachmentDesc[0]);
+		RenderPassInfo.attachmentCount = ARRAYSIZE(AttachmentDesc);
 		RenderPassInfo.pAttachments = AttachmentDesc;
 		RenderPassInfo.subpassCount = 1;
 		RenderPassInfo.pSubpasses = &Subpass;

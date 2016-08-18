@@ -37,7 +37,7 @@ bool GQuitting = false;
 
 static bool GSkipValidation = false;
 
-void ImageBarrier(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask);
+void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask);
 
 static void GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, std::vector<const char*>& OutExtensions)
 {
@@ -275,7 +275,7 @@ struct FGfxPipeline : public FBasePipeline
 		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		VIInfo.vertexBindingDescriptionCount = 1;
 		VIInfo.pVertexBindingDescriptions = &VBDesc;
-		VIInfo.vertexAttributeDescriptionCount = sizeof(VIADesc) / sizeof(VIADesc[0]);
+		VIInfo.vertexAttributeDescriptionCount = ARRAYSIZE(VIADesc);
 		VIInfo.pVertexAttributeDescriptions = VIADesc;
 
 		VkPipelineInputAssemblyStateCreateInfo IAInfo;
@@ -769,6 +769,7 @@ struct FInstance
 			char s[2048];
 			sprintf_s(s, "<VK>Error: %s\n", Message);
 			::OutputDebugStringA(s);
+			check(0);
 			++n;
 		}
 		else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
@@ -778,8 +779,23 @@ struct FInstance
 			::OutputDebugStringA(s);
 			++n;
 		}
-		else if (0)
+		else if (1)
 		{
+			static const char* SkipPrefixes[] =
+			{
+				"OBJTRACK",
+				"loader",
+				"MEM",
+				"DS",
+			};
+			for (uint32 Index = 0; Index < ARRAYSIZE(SkipPrefixes); ++Index)
+			{
+				if (!strcmp(LayerPrefix, SkipPrefixes[Index]))
+				{
+					return false;
+				}
+			}
+
 			uint32 Size = strlen(Message) + 100;
 			auto* s = new char[Size];
 			snprintf(s, Size - 1, "<VK>: %s\n", Message);
@@ -918,9 +934,9 @@ void FMemPage::Release(FMemSubAlloc* SubAlloc)
 	{
 		std::sort(FreeList.begin(), FreeList.end(),
 			[](const FRange& Left, const FRange& Right)
-			{
-				return Left.Begin < Right.Begin;
-			});
+		{
+			return Left.Begin < Right.Begin;
+		});
 
 		for (uint32 Index = FreeList.size() - 1; Index > 0; --Index)
 		{
@@ -1081,24 +1097,6 @@ struct FSwapchain
 
 	void ClearAndTransitionToPresent(FCmdBuffer* CmdBuffer)
 	{
-/*
-		VkMemoryRequirements Reqs;
-		vkGetImageMemoryRequirements(Device, Images[0], &Reqs);
-
-		FBuffer Buffer;
-		Buffer.Create(Device, Reqs.size);
-		vkCmdFillBuffer(CmdBuffer->CmdBuffer, Buffer.Buffer, 0, Reqs.size, 0);
-
-		VkBufferImageCopy Region;
-		MemZero(Region);
-		Region.bufferOffset = 0;
-		Region.bufferRowLength = SurfaceResolution.width * 4;
-		Region.bufferImageHeight = SurfaceResolution.height;
-		Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		Region.imageSubresource.layerCount = 1;
-		Region.imageExtent.width = SurfaceResolution.width;
-		Region.imageExtent.height = SurfaceResolution.height;
-*/
 		VkClearColorValue Color;
 		MemZero(Color);
 		VkImageSubresourceRange Range;
@@ -1108,9 +1106,9 @@ struct FSwapchain
 		Range.layerCount = 1;
 		for (uint32 Index = 0; Index < (uint32)Images.size(); ++Index)
 		{
-			ImageBarrier(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, Images[Index], VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 			vkCmdClearColorImage(CmdBuffer->CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
-			ImageBarrier(CmdBuffer, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, Images[Index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		}
 	}
 
@@ -1153,7 +1151,7 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 	check(State == EState::Beginned);
 
 	static uint32 N = 0;
-	N = (N  + 1) % 256;
+	N = (N + 1) % 256;
 
 	VkClearValue ClearValues[2] = { { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
 	ClearValues[1].depthStencil.depth = 1.0f;
@@ -1170,7 +1168,7 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 	State = EState::InsideRenderPass;
 }
 
-void ImageBarrier(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
+void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
 {
 	VkImageMemoryBarrier TransferToPresentBarrier;
 	MemZero(TransferToPresentBarrier);
@@ -1185,9 +1183,8 @@ void ImageBarrier(FCmdBuffer* CmdBuffer, VkImage Image, VkImageLayout SrcLayout,
 	TransferToPresentBarrier.subresourceRange.aspectMask = AspectMask;;
 	TransferToPresentBarrier.subresourceRange.layerCount = 1;
 	TransferToPresentBarrier.subresourceRange.levelCount = 1;
-	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
+	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
 }
-
 
 struct FResizableObjects
 {
@@ -1309,7 +1306,7 @@ static bool LoadShadersAndGeometry()
 	check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
 	check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
 	check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
-	
+
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
 	{
 		return false;
@@ -1350,7 +1347,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
 
 	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
-	
+
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
 	GDescriptorPool.Create(GDevice.Device);
@@ -1396,7 +1393,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
-		ImageBarrier(CmdBuffer, GDepthImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GDepthImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
 		{
 			// Fill texture
 			VkClearColorValue Color;
@@ -1410,7 +1407,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			Range.levelCount = 1;
 			Range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-			ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 			vkCmdClearColorImage(CmdBuffer->CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &Color, 1, &Range);
 
 			StagingBuffer.Create(GDevice.Device, GImage.Reqs.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
@@ -1436,7 +1433,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			Region.imageExtent.depth = 1;
 			vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
 
-			ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GImage.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		}
 		CmdBuffer->End();
 		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
@@ -1451,7 +1448,7 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 {
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePipeline.Pipeline);
 
-	ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GImage.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	{
 		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
@@ -1476,7 +1473,7 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
 
-	ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GImage.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline.Pipeline);
 
@@ -1503,7 +1500,7 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GImage.Width / 8, GImage.Height / 8, 1);
 
-	ImageBarrier(CmdBuffer, GImage.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GImage.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void DoRender()
@@ -1517,7 +1514,7 @@ void DoRender()
 
 	GSwapchain.AcquireNextImage();
 
-	ImageBarrier(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	TestCompute(CmdBuffer);
 
@@ -1616,7 +1613,7 @@ void DoRender()
 
 	CmdBuffer->EndRenderPass();
 
-	ImageBarrier(CmdBuffer, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	CmdBuffer->End();
 
