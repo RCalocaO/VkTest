@@ -546,6 +546,30 @@ struct FGfxPSO : public FPSO
 	}
 };
 
+class FGfxPSOLayout
+{
+public:
+	FGfxPSOLayout(FGfxPSO* InGfxPSO, uint32 InWidth, uint32 InHeight, VkRenderPass InRenderPass)
+		: GfxPSO(InGfxPSO)
+		, Width(InWidth)
+		, Height(InHeight)
+		, RenderPass(InRenderPass)
+	{
+	}
+
+	friend inline bool operator < (const FGfxPSOLayout& A, const FGfxPSOLayout& B)
+	{
+		return A.Width < B.Width && A.Height < B.Height && A.GfxPSO < B.GfxPSO && A.RenderPass < B.RenderPass;
+	}
+protected:
+	FGfxPSO* GfxPSO;
+	uint32 Width;
+	uint32 Height;
+	VkRenderPass RenderPass;
+};
+
+
+
 struct FComputePSO : public FPSO
 {
 	FShader CS;

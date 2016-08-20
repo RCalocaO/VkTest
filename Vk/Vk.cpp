@@ -409,7 +409,7 @@ struct FGfxPipeline : public FBasePipeline
 	}
 };
 
-static FGfxPipeline GGfxPipeline;
+static FGfxPipeline* GGfxPipeline = nullptr;
 
 
 struct FComputePipeline : public FBasePipeline
@@ -794,8 +794,8 @@ struct FObjectCache
 	std::map<int32, FFramebuffer*> Framebuffers;
 
 	std::map<uint64, FRenderPass*> RenderPasses;
-	//std::map<FGfxPSO*> GfxPipelines;
 	std::map<FComputePSO*, FComputePipeline*> ComputePipelines;
+	std::map<FGfxPSOLayout, FGfxPipeline*> GfxPipelines;
 
 	void Create(FDevice* InDevice)
 	{
@@ -806,7 +806,7 @@ struct FObjectCache
 			RenderPass = *GetOrCreateRenderPass(GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, 1, &ColorFormat, VK_FORMAT_D32_SFLOAT);
 		}
 
-		GGfxPipeline.Create(Device->Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
+		GGfxPipeline = GetOrCreateGfxPipeline(&GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
 
 		GComputePipeline = GetOrCreateComputePipeline(&GTestComputePSO);
 		GComputePostPipeline = GetOrCreateComputePipeline(&GTestComputePostPSO);
@@ -816,6 +816,21 @@ struct FObjectCache
 			Framebuffers[Index] = new FFramebuffer;
 			Framebuffers[Index]->CreateColorAndDepth(Device->Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
 		}
+	}
+
+	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	{
+		FGfxPSOLayout Layout(GfxPSO, Width, Height, RenderPass);
+		auto Found = GfxPipelines.find(Layout);
+		if (Found != GfxPipelines.end())
+		{
+			return Found->second;
+		}
+
+		auto* NewPipeline = new FGfxPipeline;
+		NewPipeline->Create(Device->Device, GfxPSO, Width, Height, RenderPass);
+		GfxPipelines[Layout] = NewPipeline;
+		return NewPipeline;
 	}
 
 	FComputePipeline* GetOrCreateComputePipeline(FComputePSO* ComputePSO)
@@ -874,7 +889,12 @@ struct FObjectCache
 		}
 		ComputePipelines.swap(decltype(ComputePipelines)());
 
-		GGfxPipeline.Destroy(GDevice.Device);
+		for (auto& Pair : GfxPipelines)
+		{
+			Pair.second->Destroy(Device->Device);
+			delete Pair.second;
+		}
+		GfxPipelines.swap(decltype(GfxPipelines)());
 	}
 };
 FObjectCache GObjectCache;
@@ -1175,7 +1195,7 @@ void DoRender()
 	TestCompute(CmdBuffer);
 
 	CmdBuffer->BeginRenderPass(GObjectCache.RenderPass.RenderPass, *GObjectCache.Framebuffers[GSwapchain.AcquiredImageIndex]);
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline->Pipeline);
 
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
 	static float AngleDegrees = 0;
@@ -1243,7 +1263,7 @@ void DoRender()
 		}
 
 		vkUpdateDescriptorSets(GDevice.Device, DSWrites.size(), &DSWrites[0], 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 	{
 		VkViewport Viewport;
