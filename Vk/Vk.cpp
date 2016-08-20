@@ -789,25 +789,56 @@ void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipeli
 
 struct FObjectCache
 {
+	FDevice* Device = nullptr;
 	FRenderPass RenderPass;
 	std::map<int32, FFramebuffer*> Framebuffers;
 
-	void Create()
-	{
-		RenderPass.Create(GDevice.Device);
+	std::map<uint64, FRenderPass*> RenderPasses;
 
-		GGfxPipeline.Create(GDevice.Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
-		GComputePipeline.Create(GDevice.Device, &GTestComputePSO);
-		GComputePostPipeline.Create(GDevice.Device, &GTestComputePostPSO);
+	void Create(FDevice* InDevice)
+	{
+		Device = InDevice;
+
+		{
+			VkFormat ColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+			RenderPass = *GetOrCreateRenderPass(GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, 1, &ColorFormat, VK_FORMAT_D32_SFLOAT);
+		}
+
+		GGfxPipeline.Create(Device->Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
+		GComputePipeline.Create(Device->Device, &GTestComputePSO);
+		GComputePostPipeline.Create(Device->Device, &GTestComputePostPSO);
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
 			Framebuffers[Index] = new FFramebuffer;
-			Framebuffers[Index]->CreateColorAndDepth(GDevice.Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+			Framebuffers[Index]->CreateColorAndDepth(Device->Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
 		}
+	}
+
+	FRenderPass* GetOrCreateRenderPass(uint32 Width, uint32 Height, uint32 NumColorTargets, VkFormat* ColorFormats, VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED)
+	{
+		FRenderPassLayout Layout(Width, Height, NumColorTargets, ColorFormats, DepthStencilFormat);
+		auto LayoutHash = Layout.GetHash();
+		auto Found = RenderPasses.find(LayoutHash);
+		if (Found != RenderPasses.end())
+		{
+			return Found->second;
+		}
+
+		auto* NewRenderPass = new FRenderPass;
+		NewRenderPass->Create(Device->Device, Layout);
+		RenderPasses[LayoutHash] = NewRenderPass;
+		return NewRenderPass;
 	}
 
 	void Destroy()
 	{
+		for (auto& Pair : RenderPasses)
+		{
+			Pair.second->Destroy();
+			delete Pair.second;
+		}
+		RenderPasses.swap(decltype(RenderPasses)());
+
 		for (auto& Pair : Framebuffers)
 		{
 			Pair.second->Destroy();
@@ -815,7 +846,8 @@ struct FObjectCache
 		}
 		// Swap with empty
 		Framebuffers.swap(decltype(Framebuffers)());
-		RenderPass.Destroy();
+
+		//RenderPass.Destroy();
 
 		GComputePostPipeline.Destroy(GDevice.Device);
 		GComputePipeline.Destroy(GDevice.Device);
@@ -986,7 +1018,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GSceneColor.Create(GDevice.Device, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GDepthBuffer.Create(GDevice.Device, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 
-	GObjectCache.Create();
+	GObjectCache.Create(&GDevice);
 
 	FBuffer StagingBuffer;
 	{
@@ -1232,7 +1264,7 @@ void DoResize(uint32 Width, uint32 Height)
 		GSwapchain.Destroy();
 		GObjectCache.Destroy();
 		GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
-		GObjectCache.Create();
+		GObjectCache.Create(&GDevice);
 	}
 }
 

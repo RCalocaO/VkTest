@@ -986,54 +986,117 @@ struct FFramebuffer : public FRecyclableResource
 };
 
 
+class FRenderPassLayout
+{
+public:
+	FRenderPassLayout(uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkFormat* InColorFormats, VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED)
+		: Width(InWidth)
+		, Height(InHeight)
+		, NumColorTargets(InNumColorTargets)
+		, DepthStencilFormat(InDepthStencilFormat)
+	{
+		Hash = Width | (Height << 16) | ((uint64)NumColorTargets << (uint64)33);
+		Hash |= ((uint64)DepthStencilFormat << (uint64)56);
+
+		MemZero(ColorFormats);
+		uint32 ColorHash = 0;
+		for (uint32 Index = 0; Index < InNumColorTargets; ++Index)
+		{
+			ColorFormats[Index] = InColorFormats[Index];
+			ColorHash ^= (ColorFormats[Index] << (Index * 4));
+		}
+
+		Hash ^= ((uint64)ColorHash << (uint64)40);
+	}
+
+	inline uint64 GetHash() const
+	{
+		return Hash;
+	}
+
+	enum
+	{
+		MAX_COLOR_ATTACHMENTS = 8
+	};
+
+protected:
+	uint32 Width = 0;
+	uint32 Height = 0;
+	uint32 NumColorTargets = 0;
+	VkFormat ColorFormats[MAX_COLOR_ATTACHMENTS];
+	VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED;	// Undefined means no Depth/Stencil
+
+	uint64 Hash = 0;
+
+	friend struct FRenderPass;
+};
+
 struct FRenderPass : public FRecyclableResource
 {
 	VkRenderPass RenderPass = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
 
-	void Create(VkDevice InDevice)
+	void Create(VkDevice InDevice, const FRenderPassLayout& Layout)
 	{
 		Device = InDevice;
 
-		VkAttachmentDescription AttachmentDesc[2];
+		VkAttachmentDescription AttachmentDesc[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
+		VkAttachmentReference AttachmentRef[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
 		MemZero(AttachmentDesc);
-		AttachmentDesc[0].format = VK_FORMAT_R8G8B8A8_UNORM;
-		AttachmentDesc[0].samples = VK_SAMPLE_COUNT_1_BIT;
-		AttachmentDesc[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		AttachmentDesc[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		AttachmentDesc[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		AttachmentDesc[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		AttachmentDesc[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		AttachmentDesc[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		AttachmentDesc[1].format = VK_FORMAT_D32_SFLOAT;
-		AttachmentDesc[1].samples = VK_SAMPLE_COUNT_1_BIT;
-		AttachmentDesc[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		AttachmentDesc[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		AttachmentDesc[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		AttachmentDesc[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		AttachmentDesc[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		AttachmentDesc[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference AttachmentRef[2];
 		MemZero(AttachmentRef);
-		AttachmentRef[0].attachment = 0;
-		AttachmentRef[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		AttachmentRef[1].attachment = 1;
-		AttachmentRef[1].layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		VkAttachmentDescription* CurrentDesc = AttachmentDesc;
+		VkAttachmentReference* CurrentRef = AttachmentRef;
+		uint32 Index = 0;
+		for (Index = 0; Index < Layout.NumColorTargets; ++Index)
+		{
+			CurrentDesc->format = Layout.ColorFormats[Index];
+			CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
+			CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+			CurrentRef->attachment = Index;
+			CurrentRef->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+			++CurrentDesc;
+			++CurrentRef;
+		}
+
+		VkAttachmentReference* DepthRef = nullptr;
+		if (Layout.DepthStencilFormat != VK_FORMAT_UNDEFINED)
+		{
+			CurrentDesc->format = Layout.DepthStencilFormat;
+			CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
+			CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			++CurrentDesc;
+
+			DepthRef = CurrentRef;
+			CurrentRef->attachment = Index;
+			CurrentRef->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			++CurrentRef;
+		}
+
 
 		VkSubpassDescription Subpass;
 		MemZero(Subpass);
 		Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		Subpass.colorAttachmentCount = 1;
+		Subpass.colorAttachmentCount = Index;
 		Subpass.pColorAttachments = &AttachmentRef[0];
-		Subpass.pDepthStencilAttachment = &AttachmentRef[1];
+		Subpass.pDepthStencilAttachment =  DepthRef;
 
 		VkRenderPassCreateInfo RenderPassInfo;
 		MemZero(RenderPassInfo);
 		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		RenderPassInfo.attachmentCount = ARRAYSIZE(AttachmentDesc);
+		RenderPassInfo.attachmentCount = CurrentDesc - AttachmentDesc;
 		RenderPassInfo.pAttachments = AttachmentDesc;
 		RenderPassInfo.subpassCount = 1;
 		RenderPassInfo.pSubpasses = &Subpass;
