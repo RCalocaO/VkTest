@@ -27,6 +27,7 @@ struct FObjUB
 FBuffer GObjUB;
 
 FImage2DWithView GColorImage;
+FImage2DWithView GSceneColor;
 FImage2DWithView GDepthBuffer;
 FSampler GSampler;
 
@@ -49,7 +50,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 
 		checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
 
-		const char* ValidationLayers[] =
+		const char* UseValidationLayers[] =
 		{
 			"VK_LAYER_LUNARG_standard_validation",
 			"VK_LAYER_LUNARG_image",
@@ -61,7 +62,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 			"VK_LAYER_GOOGLE_unique_objects",
 		};
 
-		for (auto* DesiredLayer : ValidationLayers)
+		for (auto* DesiredLayer : UseValidationLayers)
 		{
 			for (auto& Prop : InstanceProperties)
 			{
@@ -84,19 +85,22 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 
 		checkVk(vkEnumerateInstanceExtensionProperties(nullptr, &NumExtensions, &ExtensionsProperties[0]));
 
-		for (auto& Extension : ExtensionsProperties)
+		const char* UseExtensions[] =
 		{
-			if (!strcmp(Extension.extensionName, "VK_KHR_surface"))
+			"VK_KHR_surface",
+			"VK_KHR_win32_surface",
+			"VK_EXT_debug_report",
+		};
+		for (auto* DesiredExtension : UseExtensions)
+		{
+			for (auto& Extension : ExtensionsProperties)
 			{
-				OutExtensions.push_back("VK_KHR_surface");
-			}
-			else if (!strcmp(Extension.extensionName, "VK_KHR_win32_surface"))
-			{
-				OutExtensions.push_back("VK_KHR_win32_surface");
-			}
-			else if (!strcmp(Extension.extensionName, "VK_EXT_debug_report"))
-			{
-				OutExtensions.push_back("VK_EXT_debug_report");
+				if (!strcmp(Extension.extensionName, DesiredExtension))
+				{
+					OutExtensions.push_back(DesiredExtension);
+					// Should probably remove it from ExtensionsProperties array...
+					break;
+				}
 			}
 		}
 	}
@@ -783,7 +787,7 @@ void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipeli
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
 }
 
-struct FResizableObjects
+struct FObjectCache
 {
 	FRenderPass RenderPass;
 	std::map<int32, FFramebuffer*> Framebuffers;
@@ -809,7 +813,8 @@ struct FResizableObjects
 			Pair.second->Destroy();
 			delete Pair.second;
 		}
-
+		// Swap with empty
+		Framebuffers.swap(decltype(Framebuffers)());
 		RenderPass.Destroy();
 
 		GComputePostPipeline.Destroy(GDevice.Device);
@@ -817,7 +822,7 @@ struct FResizableObjects
 		GGfxPipeline.Destroy(GDevice.Device);
 	}
 };
-FResizableObjects GResizableObjects;
+FObjectCache GObjectCache;
 
 
 template <typename TFillLambda>
@@ -978,9 +983,10 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GColorImage.Create(GDevice.Device, 16, 16, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GSampler.Create(GDevice.Device);
+	GSceneColor.Create(GDevice.Device, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GDepthBuffer.Create(GDevice.Device, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 
-	GResizableObjects.Create();
+	GObjectCache.Create();
 
 	FBuffer StagingBuffer;
 	{
@@ -1113,7 +1119,7 @@ void DoRender()
 
 	TestCompute(CmdBuffer);
 
-	CmdBuffer->BeginRenderPass(GResizableObjects.RenderPass.RenderPass, *GResizableObjects.Framebuffers[GSwapchain.AcquiredImageIndex]);
+	CmdBuffer->BeginRenderPass(GObjectCache.RenderPass.RenderPass, *GObjectCache.Framebuffers[GSwapchain.AcquiredImageIndex]);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline.Pipeline);
 
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
@@ -1224,9 +1230,9 @@ void DoResize(uint32 Width, uint32 Height)
 	{
 		vkDeviceWaitIdle(GDevice.Device);
 		GSwapchain.Destroy();
-		GResizableObjects.Destroy();
+		GObjectCache.Destroy();
 		GSwapchain.Create(GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
-		GResizableObjects.Create();
+		GObjectCache.Create();
 	}
 }
 
@@ -1236,7 +1242,7 @@ void DoDeinit()
 
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
 
-	GResizableObjects.Destroy();
+	GObjectCache.Destroy();
 	GCmdBufferMgr.Destroy();
 
 	GTriVB.Destroy(GDevice.Device);
@@ -1248,6 +1254,7 @@ void DoDeinit()
 	GSampler.Destroy();
 
 	GDepthBuffer.Destroy();
+	GSceneColor.Destroy();
 
 	GDescriptorPool.Destroy();
 
