@@ -438,8 +438,8 @@ struct FComputePipeline : public FBasePipeline
 		checkVk(vkCreateComputePipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
 	}
 };
-static FComputePipeline GComputePipeline;
-static FComputePipeline GComputePostPipeline;
+static FComputePipeline* GComputePipeline = nullptr;
+static FComputePipeline* GComputePostPipeline = nullptr;
 
 void FInstance::CreateDevice(FDevice& OutDevice)
 {
@@ -794,6 +794,8 @@ struct FObjectCache
 	std::map<int32, FFramebuffer*> Framebuffers;
 
 	std::map<uint64, FRenderPass*> RenderPasses;
+	//std::map<FGfxPSO*> GfxPipelines;
+	std::map<FComputePSO*, FComputePipeline*> ComputePipelines;
 
 	void Create(FDevice* InDevice)
 	{
@@ -805,13 +807,29 @@ struct FObjectCache
 		}
 
 		GGfxPipeline.Create(Device->Device, &GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
-		GComputePipeline.Create(Device->Device, &GTestComputePSO);
-		GComputePostPipeline.Create(Device->Device, &GTestComputePostPSO);
+
+		GComputePipeline = GetOrCreateComputePipeline(&GTestComputePSO);
+		GComputePostPipeline = GetOrCreateComputePipeline(&GTestComputePostPSO);
+
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
 			Framebuffers[Index] = new FFramebuffer;
 			Framebuffers[Index]->CreateColorAndDepth(Device->Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
 		}
+	}
+
+	FComputePipeline* GetOrCreateComputePipeline(FComputePSO* ComputePSO)
+	{
+		auto Found = ComputePipelines.find(ComputePSO);
+		if (Found != ComputePipelines.end())
+		{
+			return Found->second;
+		}
+
+		auto* NewPipeline = new FComputePipeline;
+		NewPipeline->Create(Device->Device, ComputePSO);
+		ComputePipelines[ComputePSO] = NewPipeline;
+		return NewPipeline;
 	}
 
 	FRenderPass* GetOrCreateRenderPass(uint32 Width, uint32 Height, uint32 NumColorTargets, VkFormat* ColorFormats, VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED)
@@ -849,8 +867,13 @@ struct FObjectCache
 
 		//RenderPass.Destroy();
 
-		GComputePostPipeline.Destroy(GDevice.Device);
-		GComputePipeline.Destroy(GDevice.Device);
+		for (auto& Pair : ComputePipelines)
+		{
+			Pair.second->Destroy(Device->Device);
+			delete Pair.second;
+		}
+		ComputePipelines.swap(decltype(ComputePipelines)());
+
 		GGfxPipeline.Destroy(GDevice.Device);
 	}
 };
@@ -1079,7 +1102,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 void TestCompute(FCmdBuffer* CmdBuffer)
 {
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePipeline.Pipeline);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePipeline->Pipeline);
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -1101,14 +1124,14 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		DSWrite.pImageInfo = &ImageInfo;
 		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePipeline.PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline.Pipeline);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline->Pipeline);
 
 	{
 		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePostPSO.DSLayout);
@@ -1128,7 +1151,7 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		DSWrite.pImageInfo = &ImageInfo;
 		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePostPipeline.PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePostPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
