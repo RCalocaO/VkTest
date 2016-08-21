@@ -52,6 +52,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 
 		const char* UseValidationLayers[] =
 		{
+			"VK_LAYER_LUNARG_api_dump",
 			"VK_LAYER_LUNARG_standard_validation",
 			"VK_LAYER_LUNARG_image",
 			"VK_LAYER_LUNARG_object_tracker",
@@ -791,11 +792,36 @@ struct FObjectCache
 {
 	FDevice* Device = nullptr;
 	FRenderPass RenderPass;
-	std::map<int32, FFramebuffer*> Framebuffers;
 
 	std::map<uint64, FRenderPass*> RenderPasses;
 	std::map<FComputePSO*, FComputePipeline*> ComputePipelines;
 	std::map<FGfxPSOLayout, FGfxPipeline*> GfxPipelines;
+
+	struct FFrameBufferEntry
+	{
+		FFramebuffer* Framebuffer;
+
+		FFrameBufferEntry(VkRenderPass InRenderPass, uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkImageView* InColorViews, VkImageView InDepthStencilView = VK_NULL_HANDLE)
+			: RenderPass(InRenderPass)
+			, Width(InWidth)
+			, Height(InHeight)
+			, NumColorTargets(InNumColorTargets)
+			, DepthStencilView(InDepthStencilView)
+		{
+			for (uint32 Index = 0; Index < InNumColorTargets; ++Index)
+			{
+				ColorViews[Index] = InColorViews[Index];
+			}
+		}
+
+		VkRenderPass RenderPass = VK_NULL_HANDLE;
+		uint32 Width = 0;
+		uint32 Height = 0;
+		uint32 NumColorTargets = 0;
+		VkImageView ColorViews[FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
+		VkImageView DepthStencilView = VK_NULL_HANDLE;
+	};
+	std::vector<FFrameBufferEntry> Framebuffers;
 
 	void Create(FDevice* InDevice)
 	{
@@ -813,9 +839,27 @@ struct FObjectCache
 
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
-			Framebuffers[Index] = new FFramebuffer;
-			Framebuffers[Index]->CreateColorAndDepth(Device->Device, RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+			GetOrCreateColorDepthFramebuffer(RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
 		}
+	}
+
+	FFramebuffer* GetOrCreateColorDepthFramebuffer(VkRenderPass RenderPass, VkImageView Color, VkImageView DepthStencil, uint32 Width, uint32 Height)
+	{
+		for (auto& Entry : Framebuffers)
+		{
+			if (Entry.RenderPass == RenderPass && Entry.NumColorTargets == 1 && Entry.ColorViews[0] == Color && Entry.DepthStencilView == DepthStencil && Entry.Width == Width && Entry.Height == Height)
+			{
+				return Entry.Framebuffer;
+			}
+		}
+
+		FFrameBufferEntry Entry(RenderPass, Width, Height, 1, &Color, DepthStencil);
+
+		auto* NewFramebuffer = new FFramebuffer;
+		NewFramebuffer->CreateColorAndDepth(Device->Device, RenderPass, Color, DepthStencil, Width, Height);
+		Entry.Framebuffer = NewFramebuffer;
+		Framebuffers.push_back(Entry);
+		return NewFramebuffer;
 	}
 
 	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
@@ -872,14 +916,6 @@ struct FObjectCache
 		}
 		RenderPasses.swap(decltype(RenderPasses)());
 
-		for (auto& Pair : Framebuffers)
-		{
-			Pair.second->Destroy();
-			delete Pair.second;
-		}
-		// Swap with empty
-		Framebuffers.swap(decltype(Framebuffers)());
-
 		//RenderPass.Destroy();
 
 		for (auto& Pair : ComputePipelines)
@@ -895,6 +931,13 @@ struct FObjectCache
 			delete Pair.second;
 		}
 		GfxPipelines.swap(decltype(GfxPipelines)());
+
+		for (auto& Entry : Framebuffers)
+		{
+			Entry.Framebuffer->Destroy();
+			delete Entry.Framebuffer;
+		}
+		Framebuffers.swap(decltype(Framebuffers)());
 	}
 };
 FObjectCache GObjectCache;
@@ -1194,7 +1237,7 @@ void DoRender()
 
 	TestCompute(CmdBuffer);
 
-	CmdBuffer->BeginRenderPass(GObjectCache.RenderPass.RenderPass, *GObjectCache.Framebuffers[GSwapchain.AcquiredImageIndex]);
+	CmdBuffer->BeginRenderPass(GObjectCache.RenderPass.RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(GObjectCache.RenderPass.RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height));
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline->Pipeline);
 
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();

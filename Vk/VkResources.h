@@ -1009,10 +1009,11 @@ struct FFramebuffer : public FRecyclableResource
 	uint32 Height = 0;
 };
 
-
 class FRenderPassLayout
 {
 public:
+	FRenderPassLayout() {}
+
 	FRenderPassLayout(uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkFormat* InColorFormats, VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED)
 		: Width(InWidth)
 		, Height(InHeight)
@@ -1055,14 +1056,17 @@ protected:
 	friend struct FRenderPass;
 };
 
+
 struct FRenderPass : public FRecyclableResource
 {
 	VkRenderPass RenderPass = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
+	FRenderPassLayout Layout;
 
-	void Create(VkDevice InDevice, const FRenderPassLayout& Layout)
+	void Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	{
 		Device = InDevice;
+		Layout = InLayout;
 
 		VkAttachmentDescription AttachmentDesc[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
 		VkAttachmentReference AttachmentRef[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
