@@ -325,10 +325,12 @@ struct FImageView
 {
 	VkImageView ImageView = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
+	VkFormat Format = VK_FORMAT_UNDEFINED;
 
-	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat Format, VkImageAspectFlags ImageAspect)
+	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect)
 	{
 		Device = InDevice;
+		Format = InFormat;
 
 		VkImageViewCreateInfo Info;
 		MemZero(Info);
@@ -353,7 +355,7 @@ struct FImageView
 	}
 };
 
-static inline bool IsDepthOrStencilFormat(VkFormat Format)
+inline bool IsDepthOrStencilFormat(VkFormat Format)
 {
 	switch (Format)
 	{
@@ -410,6 +412,11 @@ struct FImage2DWithView
 
 	FImage Image;
 	FImageView ImageView;
+
+	VkFormat GetFormat() const
+	{
+		return ImageView.Format;
+	}
 };
 
 struct FSampler

@@ -410,9 +410,6 @@ struct FGfxPipeline : public FBasePipeline
 	}
 };
 
-static FGfxPipeline* GGfxPipeline = nullptr;
-
-
 struct FComputePipeline : public FBasePipeline
 {
 	void Create(VkDevice Device, FComputePSO* PSO)
@@ -439,8 +436,6 @@ struct FComputePipeline : public FBasePipeline
 		checkVk(vkCreateComputePipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
 	}
 };
-static FComputePipeline* GComputePipeline = nullptr;
-static FComputePipeline* GComputePostPipeline = nullptr;
 
 void FInstance::CreateDevice(FDevice& OutDevice)
 {
@@ -563,6 +558,12 @@ FMemManager GMemMgr;
 
 struct FSwapchain
 {
+	enum
+	{
+		SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM,
+		BACKBUFFER_VIEW_FORMAT = VK_FORMAT_R8G8B8A8_UNORM,
+	};
+
 	void Create(VkPhysicalDevice PhysicalDevice, VkDevice InDevice, VkSurfaceKHR Surface, uint32& WindowWidth, uint32& WindowHeight)
 	{
 		Device = InDevice;
@@ -577,7 +578,7 @@ struct FSwapchain
 		check(NumFormats > 0);
 		if (NumFormats == 1 && Formats[0].format == VK_FORMAT_UNDEFINED)
 		{
-			ColorFormat = VK_FORMAT_B8G8R8_UNORM;
+			ColorFormat = (VkFormat)SWAPCHAIN_IMAGE_FORMAT;
 		}
 		else
 		{
@@ -658,7 +659,7 @@ struct FSwapchain
 
 		for (uint32 Index = 0; Index < NumImages; ++Index)
 		{
-			ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+			ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, (VkFormat)BACKBUFFER_VIEW_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
 			PresentCompleteSemaphores[Index].Create(Device);
 			RenderingSemaphores[Index].Create(Device);
 		}
@@ -791,7 +792,6 @@ void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipeli
 struct FObjectCache
 {
 	FDevice* Device = nullptr;
-	FRenderPass RenderPass;
 
 	std::map<uint64, FRenderPass*> RenderPasses;
 	std::map<FComputePSO*, FComputePipeline*> ComputePipelines;
@@ -826,21 +826,13 @@ struct FObjectCache
 	void Create(FDevice* InDevice)
 	{
 		Device = InDevice;
-
-		{
-			VkFormat ColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
-			RenderPass = *GetOrCreateRenderPass(GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, 1, &ColorFormat, VK_FORMAT_D32_SFLOAT);
-		}
-
-		GGfxPipeline = GetOrCreateGfxPipeline(&GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass.RenderPass);
-
-		GComputePipeline = GetOrCreateComputePipeline(&GTestComputePSO);
-		GComputePostPipeline = GetOrCreateComputePipeline(&GTestComputePostPSO);
+		/*VkFormat ColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+		auto* BackBufferRenderPass = GetOrCreateRenderPass(GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, 1, &ColorFormat, VK_FORMAT_D32_SFLOAT);
 
 		for (uint32 Index = 0; Index < GSwapchain.Images.size(); ++Index)
 		{
-			GetOrCreateColorDepthFramebuffer(RenderPass.RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
-		}
+			GetOrCreateColorDepthFramebuffer(BackBufferRenderPass->RenderPass, GSwapchain.ImageViews[Index].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height);
+		}*/
 	}
 
 	FFramebuffer* GetOrCreateColorDepthFramebuffer(VkRenderPass RenderPass, VkImageView Color, VkImageView DepthStencil, uint32 Width, uint32 Height)
@@ -1165,7 +1157,10 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 void TestCompute(FCmdBuffer* CmdBuffer)
 {
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePipeline->Pipeline);
+	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GTestComputePSO);
+	auto* ComputePostPipeline = GObjectCache.GetOrCreateComputePipeline(&GTestComputePostPSO);
+
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -1187,14 +1182,14 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		DSWrite.pImageInfo = &ImageInfo;
 		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, GComputePostPipeline->Pipeline);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePostPipeline->Pipeline);
 
 	{
 		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePostPSO.DSLayout);
@@ -1214,7 +1209,7 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		DSWrite.pImageInfo = &ImageInfo;
 		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GComputePostPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ComputePostPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
@@ -1237,8 +1232,12 @@ void DoRender()
 
 	TestCompute(CmdBuffer);
 
-	CmdBuffer->BeginRenderPass(GObjectCache.RenderPass.RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(GObjectCache.RenderPass.RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height));
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline->Pipeline);
+	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
+	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, 1, &ColorFormat, GDepthBuffer.GetFormat());
+	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(RenderPass->RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height));
+
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, GSwapchain.SurfaceResolution.width, GSwapchain.SurfaceResolution.height, RenderPass->RenderPass);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
 	static float AngleDegrees = 0;
@@ -1306,7 +1305,7 @@ void DoRender()
 		}
 
 		vkUpdateDescriptorSets(GDevice.Device, DSWrites.size(), &DSWrites[0], 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GGfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 	{
 		VkViewport Viewport;
