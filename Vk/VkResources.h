@@ -265,11 +265,12 @@ struct FBuffer : public FRecyclableResource
 
 struct FImage : public FRecyclableResource
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
 	{
 		Device = InDevice;
 		Width = InWidth;
 		Height = InHeight;
+		Format = InFormat;
 
 		VkImageCreateInfo ImageInfo;
 		MemZero(ImageInfo);
@@ -316,6 +317,7 @@ struct FImage : public FRecyclableResource
 	VkImage Image = VK_NULL_HANDLE;
 	uint32 Width = 0;
 	uint32 Height = 0;
+	VkFormat Format = VK_FORMAT_UNDEFINED;
 	VkMemoryRequirements Reqs;
 	FMemSubAlloc* SubAlloc = nullptr;
 };
@@ -413,9 +415,29 @@ struct FImage2DWithView
 	FImage Image;
 	FImageView ImageView;
 
-	VkFormat GetFormat() const
+	inline VkFormat GetFormat() const
 	{
 		return ImageView.Format;
+	}
+
+	inline VkImage GetImage() const
+	{
+		return Image.Image;
+	}
+
+	inline VkImageView GetImageView() const
+	{
+		return ImageView.ImageView;
+	}
+
+	inline uint32 GetWidth() const
+	{
+		return Image.Width;
+	}
+
+	inline uint32 GetHeight() const
+	{
+		return Image.Height;
 	}
 };
 
@@ -991,7 +1013,7 @@ struct FFramebuffer : public FRecyclableResource
 		Width = InWidth;
 		Height = InHeight;
 
-		VkImageView Attachments[2] = {ColorAttachment, DepthAttachment};
+		VkImageView Attachments[2] = { ColorAttachment, DepthAttachment };
 
 		VkFramebufferCreateInfo CreateInfo;
 		MemZero(CreateInfo);
@@ -1126,7 +1148,7 @@ struct FRenderPass : public FRecyclableResource
 		Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		Subpass.colorAttachmentCount = Index;
 		Subpass.pColorAttachments = &AttachmentRef[0];
-		Subpass.pDepthStencilAttachment =  DepthRef;
+		Subpass.pDepthStencilAttachment = DepthRef;
 
 		VkRenderPassCreateInfo RenderPassInfo;
 		MemZero(RenderPassInfo);
@@ -1145,4 +1167,3 @@ struct FRenderPass : public FRecyclableResource
 		RenderPass = VK_NULL_HANDLE;
 	}
 };
-
