@@ -11,6 +11,10 @@ struct FRange
 	uint64 End;
 };
 
+enum
+{
+	DEFAULT_PAGE_SIZE = 16 * 1024 * 1024
+};
 
 class FMemAllocation
 {
@@ -187,7 +191,7 @@ struct FMemManager
 			}
 		}
 #endif
-		const uint64 PageSize = 8 * 1024 * 1024;
+		const uint64 PageSize = max(DEFAULT_PAGE_SIZE, Reqs.size);
 		const bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, bMapped);
 		Pages.push_back(NewPage);
