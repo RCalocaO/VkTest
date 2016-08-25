@@ -985,7 +985,7 @@ void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 
 static bool LoadShadersAndGeometry()
 {
-	static bool bDoCompile = !false;
+	static bool bDoCompile = false;
 	if (bDoCompile)
 	{
 		// Compile the shaders
@@ -997,7 +997,9 @@ static bool LoadShadersAndGeometry()
 		auto DoCompile = [&](const char* InFile)
 		{
 			std::string Compile = Glslang;
-			Compile += " -V -r -H -l ";
+			Compile += " -V -r -H -l -o ";
+			Compile += InFile;
+			Compile += ".spv ";
 			Compile += InFile;
 			if (system(Compile.c_str()))
 			{
@@ -1022,16 +1024,21 @@ static bool LoadShadersAndGeometry()
 			return false;
 		}
 
-		if (!DoCompile(" -o TestPost.spv ../Shaders/TestPost.comp"))
+		if (!DoCompile(" ../Shaders/TestPost.comp"))
 		{
 			return false;
 		}
 #undef CMD_LINE
+		check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
+		check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
+		check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
 	}
-
-	check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
-	check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
-	check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
+	else
+	{
+		check(GTestPSO.CreateVSPS(GDevice.Device, "../Shaders/Test0.vert.spv", "../Shaders/Test0.frag.spv"));
+		check(GTestComputePSO.Create(GDevice.Device, "../Shaders/Test0.comp.spv"));
+		check(GTestComputePostPSO.Create(GDevice.Device, "../Shaders/TestPost.comp.spv"));
+	}
 
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
 	{
