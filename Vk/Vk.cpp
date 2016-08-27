@@ -1074,6 +1074,20 @@ static bool LoadShadersAndGeometry()
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 {
+	LPSTR CmdLine = ::GetCommandLineA();
+	const char* Token = CmdLine;
+	while (Token = strchr(Token, ' '))
+	{
+		++Token;
+		if (!_strcmpi(Token, "-debugger"))
+		{
+			while (!::IsDebuggerPresent())
+			{
+				Sleep(0);
+			}
+		}
+	}
+
 	GInstance.Create(hInstance, hWnd);
 	GInstance.CreateDevice(GDevice);
 
