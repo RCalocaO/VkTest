@@ -641,7 +641,7 @@ struct FSwapchain
 		CreateInfo.imageColorSpace = ColorSpace;
 		CreateInfo.imageExtent = SurfaceResolution;
 		CreateInfo.imageArrayLayers = 1;
-		CreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		CreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		CreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		CreateInfo.preTransform = Transform;
 		CreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -1269,7 +1269,7 @@ void DoRender()
 
 	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(GSwapchain.GetWidth(), GSwapchain.GetHeight(), 1, &ColorFormat, GDepthBuffer.GetFormat());
-	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(RenderPass->RenderPass, GSwapchain.ImageViews[GSwapchain.AcquiredImageIndex].ImageView, GDepthBuffer.ImageView.ImageView, GSwapchain.GetWidth(), GSwapchain.GetHeight()));
+	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(RenderPass->RenderPass, GSwapchain.GetAcquiredImageView(), GDepthBuffer.ImageView.ImageView, GSwapchain.GetWidth(), GSwapchain.GetHeight()));
 
 	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, GSwapchain.GetWidth(), GSwapchain.GetHeight(), RenderPass->RenderPass);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
@@ -1324,7 +1324,7 @@ void DoRender()
 			VkDescriptorImageInfo ImageInfo;
 			MemZero(ImageInfo);
 			ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			ImageInfo.imageView = GColorImage.ImageView.ImageView;
+			ImageInfo.imageView = GSceneColor.GetImageView();//GColorImage.GetImageView();
 			ImageInfo.sampler = GSampler.Sampler;
 			ImageInfos.push_back(ImageInfo);
 
@@ -1359,14 +1359,29 @@ void DoRender()
 
 	{
 		VkDeviceSize Offset = 0;
-		//vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GVB.Buffer, &Offset);
 		vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GObjVB.Buffer, &Offset);
 		vkCmdDraw(CmdBuffer->CmdBuffer, GObj.Faces.size() * 3, 1, 0, 0);
 	}
 
 	CmdBuffer->EndRenderPass();
 
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	// Blit back buffer into scene color
+	{
+		VkImageCopy CopyRegion;
+		MemZero(CopyRegion);
+		CopyRegion.extent.width = GSwapchain.GetWidth();
+		CopyRegion.extent.height = GSwapchain.GetHeight();
+		CopyRegion.extent.depth = 1;
+		CopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		CopyRegion.srcSubresource.layerCount = 1;
+		CopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		CopyRegion.dstSubresource.layerCount = 1;
+		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GSceneColor.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+		vkCmdCopyImage(CmdBuffer->CmdBuffer, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, GSceneColor.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &CopyRegion);
+	}
+
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	CmdBuffer->End();
 
