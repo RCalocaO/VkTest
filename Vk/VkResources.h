@@ -265,11 +265,12 @@ struct FBuffer : public FRecyclableResource
 
 struct FImage : public FRecyclableResource
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips)
 	{
 		Device = InDevice;
 		Width = InWidth;
 		Height = InHeight;
+		NumMips = InNumMips;
 		Format = InFormat;
 
 		VkImageCreateInfo ImageInfo;
@@ -280,7 +281,7 @@ struct FImage : public FRecyclableResource
 		ImageInfo.extent.width = Width;
 		ImageInfo.extent.height = Height;
 		ImageInfo.extent.depth = 1;
-		ImageInfo.mipLevels = 1;
+		ImageInfo.mipLevels = NumMips;
 		ImageInfo.arrayLayers = 1;
 		ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 		ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -317,6 +318,7 @@ struct FImage : public FRecyclableResource
 	VkImage Image = VK_NULL_HANDLE;
 	uint32 Width = 0;
 	uint32 Height = 0;
+	uint32 NumMips = 0;
 	VkFormat Format = VK_FORMAT_UNDEFINED;
 	VkMemoryRequirements Reqs;
 	FMemSubAlloc* SubAlloc = nullptr;
@@ -400,9 +402,9 @@ inline VkImageAspectFlags GetImageAspectFlags(VkFormat Format)
 
 struct FImage2DWithView
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1)
 	{
-		Image.Create(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr);
+		Image.Create(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips);
 		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format));
 	}
 
@@ -573,6 +575,38 @@ struct FGfxPSO : public FPSO
 		CreateDescriptorSetLayout(Device);
 		return true;
 	}
+
+	inline void AddBinding(std::vector<VkDescriptorSetLayoutBinding>& OutBindings, VkShaderStageFlags Stage, int32 Binding, VkDescriptorType DescType, uint32 NumDescriptors = 1)
+	{
+		VkDescriptorSetLayoutBinding NewBinding;
+		MemZero(NewBinding);
+		NewBinding.binding = Binding;
+		NewBinding.descriptorType = DescType;
+		NewBinding.descriptorCount = NumDescriptors;
+		NewBinding.stageFlags = Stage;
+		OutBindings.push_back(NewBinding);
+	}
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+		VkPipelineShaderStageCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		Info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		Info.module = VS.ShaderModule;
+		Info.pName = "main";
+		OutShaderStages.push_back(Info);
+
+		if (PS.ShaderModule != VK_NULL_HANDLE)
+		{
+			MemZero(Info);
+			Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			Info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+			Info.module = PS.ShaderModule;
+			Info.pName = "main";
+			OutShaderStages.push_back(Info);
+		}
+	}
 };
 
 class FGfxPSOLayout
@@ -618,6 +652,28 @@ struct FComputePSO : public FPSO
 
 		CreateDescriptorSetLayout(Device);
 		return true;
+	}
+
+	inline void AddBinding(std::vector<VkDescriptorSetLayoutBinding>& OutBindings, int32 Binding, VkDescriptorType DescType, uint32 NumDescriptors = 1)
+	{
+		VkDescriptorSetLayoutBinding NewBinding;
+		MemZero(NewBinding);
+		NewBinding.binding = Binding;
+		NewBinding.descriptorType = DescType;
+		NewBinding.descriptorCount = NumDescriptors;
+		NewBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		OutBindings.push_back(NewBinding);
+	}
+
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	{
+		VkPipelineShaderStageCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		Info.module = CS.ShaderModule;
+		Info.pName = "main";
+		OutShaderStages.push_back(Info);
 	}
 };
 

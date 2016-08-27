@@ -125,108 +125,28 @@ struct FTestPSO : public FGfxPSO
 {
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
-		VkDescriptorSetLayoutBinding Binding;
-		MemZero(Binding);
-		Binding.binding = 0;
-		Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		Binding.descriptorCount = 1;
-		Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		OutBindings.push_back(Binding);
-
-		MemZero(Binding);
-		Binding.binding = 1;
-		Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		Binding.descriptorCount = 1;
-		Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		OutBindings.push_back(Binding);
-
-		MemZero(Binding);
-		Binding.binding = 2;
-		//Binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		Binding.descriptorCount = 1;
-		Binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-		OutBindings.push_back(Binding);
-	}
-
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
-	{
-		VkPipelineShaderStageCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		Info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		Info.module = VS.ShaderModule;
-		Info.pName = "main";
-		OutShaderStages.push_back(Info);
-
-		if (PS.ShaderModule != VK_NULL_HANDLE)
-		{
-			MemZero(Info);
-			Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			Info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-			Info.module = PS.ShaderModule;
-			Info.pName = "main";
-			OutShaderStages.push_back(Info);
-		}
+		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	}
 };
 FTestPSO GTestPSO;
 
-struct FTestComputePSO : public FComputePSO
+struct FOneImagePSO : public FComputePSO
 {
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
 	{
-		VkDescriptorSetLayoutBinding Binding;
-		MemZero(Binding);
-		Binding.binding = 0;
-		Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		Binding.descriptorCount = 1;
-		Binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-		OutBindings.push_back(Binding);
-	}
-
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
-	{
-		VkPipelineShaderStageCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-		Info.module = CS.ShaderModule;
-		Info.pName = "main";
-		OutShaderStages.push_back(Info);
+		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 };
-FTestComputePSO GTestComputePSO;
+FOneImagePSO GTestComputePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
 	{
-		VkDescriptorSetLayoutBinding Binding;
-		MemZero(Binding);
-		Binding.binding = 0;
-		Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		Binding.descriptorCount = 1;
-		Binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-		OutBindings.push_back(Binding);
-
-		MemZero(Binding);
-		Binding.binding = 1;
-		Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		Binding.descriptorCount = 1;
-		Binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-		OutBindings.push_back(Binding);
-	}
-
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
-	{
-		VkPipelineShaderStageCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-		Info.module = CS.ShaderModule;
-		Info.pName = "main";
-		OutShaderStages.push_back(Info);
+		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 };
 FTestPostComputePSO GTestComputePostPSO;
@@ -1099,6 +1019,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GDescriptorPool.Create(GDevice.Device);
 
+	GObjectCache.Create(&GDevice);
+
 	if (!LoadShadersAndGeometry())
 	{
 		return false;
@@ -1130,8 +1052,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GSampler.Create(GDevice.Device);
 	GSceneColor.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GDepthBuffer.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-
-	GObjectCache.Create(&GDevice);
 
 	FBuffer StagingBuffer;
 	{
