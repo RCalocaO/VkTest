@@ -245,7 +245,7 @@ struct FBuffer : public FRecyclableResource
 		return SubAlloc->GetMappedData();
 	}
 
-	uint64 GetBindOffset()
+	uint64 GetBindOffset() const
 	{
 		return SubAlloc->GetBindOffset();
 	}
@@ -284,7 +284,7 @@ struct FImage : public FRecyclableResource
 		ImageInfo.mipLevels = NumMips;
 		ImageInfo.arrayLayers = 1;
 		ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		ImageInfo.tiling = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0 ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
 		ImageInfo.usage = UsageFlags;
 		ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		checkVk(vkCreateImage(Device, &ImageInfo, nullptr, &Image));
@@ -1222,4 +1222,86 @@ struct FRenderPass : public FRecyclableResource
 		vkDestroyRenderPass(Device, RenderPass, nullptr);
 		RenderPass = VK_NULL_HANDLE;
 	}
+};
+
+
+class FWriteDescriptors
+{
+public:
+	~FWriteDescriptors()
+	{
+		for (auto* Info : BufferInfos)
+		{
+			delete Info;
+		}
+
+		for (auto* Info : ImageInfos)
+		{
+			delete Info;
+		}
+	}
+
+	inline void AddUniformBuffer(VkDescriptorSet DescSet, uint32 Binding, const FBuffer& Buffer)
+	{
+		VkDescriptorBufferInfo* BufferInfo = new VkDescriptorBufferInfo;
+		MemZero(*BufferInfo);
+		BufferInfo->buffer = Buffer.Buffer;
+		BufferInfo->offset = Buffer.GetBindOffset();
+		BufferInfo->range = Buffer.GetSize();
+		BufferInfos.push_back(BufferInfo);
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescSet;
+		DSWrite.dstBinding = Binding;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		DSWrite.pBufferInfo = BufferInfo;
+		DSWrites.push_back(DSWrite);
+	}
+
+	inline void AddCombinedImageSampler(VkDescriptorSet DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView)
+	{
+		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
+		MemZero(*ImageInfo);
+		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo->imageView = ImageView.ImageView;
+		ImageInfo->sampler = Sampler.Sampler;
+		ImageInfos.push_back(ImageInfo);
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescSet;
+		DSWrite.dstBinding = Binding;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		DSWrite.pImageInfo = ImageInfo;
+		DSWrites.push_back(DSWrite);
+	}
+
+	inline void AddStorageImage(VkDescriptorSet DescSet, uint32 Binding, const FImageView& ImageView)
+	{
+		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
+		MemZero(*ImageInfo);
+		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo->imageView = ImageView.ImageView;
+		ImageInfos.push_back(ImageInfo);
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescSet;
+		DSWrite.dstBinding = Binding;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		DSWrite.pImageInfo = ImageInfo;
+		DSWrites.push_back(DSWrite);
+	}
+	std::vector<VkWriteDescriptorSet> DSWrites;
+
+protected:
+	std::vector<VkDescriptorBufferInfo*> BufferInfos;
+	std::vector<VkDescriptorImageInfo*> ImageInfos;
 };

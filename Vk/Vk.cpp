@@ -26,6 +26,7 @@ struct FObjUB
 };
 FBuffer GObjUB;
 
+FImage2DWithView GCheckerboardTexture;
 FImage2DWithView GColorImage;
 FImage2DWithView GSceneColor;
 FImage2DWithView GDepthBuffer;
@@ -140,6 +141,7 @@ struct FOneImagePSO : public FComputePSO
 	}
 };
 FOneImagePSO GTestComputePSO;
+FOneImagePSO GFillTexturePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
@@ -948,16 +950,23 @@ static bool LoadShadersAndGeometry()
 		{
 			return false;
 		}
-#undef CMD_LINE
+
+		if (!DoCompile(" ../Shaders/FillTexture.comp"))
+		{
+			return false;
+		}
+
 		check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
 		check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
 		check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
+		check(GFillTexturePSO.Create(GDevice.Device, "FillTexture.spv"));
 	}
 	else
 	{
 		check(GTestPSO.CreateVSPS(GDevice.Device, "../Shaders/Test0.vert.spv", "../Shaders/Test0.frag.spv"));
 		check(GTestComputePSO.Create(GDevice.Device, "../Shaders/Test0.comp.spv"));
 		check(GTestComputePostPSO.Create(GDevice.Device, "../Shaders/TestPost.comp.spv"));
+		check(GFillTexturePSO.Create(GDevice.Device, "../Shaders/FillTexture.comp.spv"));
 	}
 
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
@@ -990,6 +999,35 @@ static bool LoadShadersAndGeometry()
 	MapAndFillBufferSync(&GObjVB, FillObj, sizeof(FVertex) * GObj.Faces.size() * 3);
 
 	return true;
+}
+
+void CreateAndFillTexture()
+{
+	GCheckerboardTexture.Create(GDevice.Device, 64, 64, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
+
+	FComputePipeline* Pipeline = GObjectCache.GetOrCreateComputePipeline(&GFillTexturePSO);
+
+	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	CmdBuffer->Begin();
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GCheckerboardTexture.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+	{
+		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GFillTexturePSO.DSLayout);
+
+		FWriteDescriptors WriteDescriptors;
+		WriteDescriptors.AddStorageImage(DescriptorSet, 0, GCheckerboardTexture.ImageView);
+		vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+	}
+
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->Pipeline);
+	vkCmdDispatch(CmdBuffer->CmdBuffer, GCheckerboardTexture.GetWidth() / 8, GCheckerboardTexture.GetHeight() / 8, 1);
+
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GCheckerboardTexture.GetImage(), VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+	CmdBuffer->End();
+	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	CmdBuffer->WaitForFence();
 }
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
@@ -1048,6 +1086,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
+	CreateAndFillTexture();
+
 	GColorImage.Create(GDevice.Device, 16, 16, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GSampler.Create(GDevice.Device);
 	GSceneColor.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
@@ -1083,7 +1123,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 				for (uint32 x = 0; x < GColorImage.GetWidth(); ++x)
 				{
 					uint8 Byte = uint8(max(y / (float)GColorImage.GetHeight(), x / (float)GColorImage.GetWidth()) * 255.0f);
-					*P = Byte | (Byte << 8) | (Byte << 16);
+					//*P = Byte | (Byte << 8) | (Byte << 16);
 					++P;
 				}
 			}
@@ -1097,7 +1137,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			Region.imageExtent.width = GColorImage.GetWidth();
 			Region.imageExtent.height = GColorImage.GetHeight();
 			Region.imageExtent.depth = 1;
-			vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GColorImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+			//vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, GColorImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
 
 			ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		}
@@ -1110,6 +1150,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	return true;
 }
 
+#if 0
 void TestCompute(FCmdBuffer* CmdBuffer)
 {
 	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GTestComputePSO);
@@ -1124,8 +1165,8 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 
 		VkDescriptorImageInfo ImageInfo;
 		MemZero(ImageInfo);
-		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		ImageInfo.imageView = GColorImage.ImageView.ImageView;
+		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo.imageView = GColorImage.GetImageView();
 		//ImageInfo.sampler = GSampler.Sampler;
 
 		VkWriteDescriptorSet DSWrite;
@@ -1140,7 +1181,7 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 
-	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
+	//vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -1151,8 +1192,8 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 
 		VkDescriptorImageInfo ImageInfo;
 		MemZero(ImageInfo);
-		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		ImageInfo.imageView = GColorImage.ImageView.ImageView;
+		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo.imageView = GColorImage.GetImageView();
 		//ImageInfo.sampler = GSampler.Sampler;
 
 		VkWriteDescriptorSet DSWrite;
@@ -1167,11 +1208,11 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ComputePostPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 
-	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
+	//vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 }
-
+#endif
 void DoRender()
 {
 	if (GQuitting)
@@ -1185,7 +1226,7 @@ void DoRender()
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	TestCompute(CmdBuffer);
+	//TestCompute(CmdBuffer);
 
 	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(GSwapchain.GetWidth(), GSwapchain.GetHeight(), 1, &ColorFormat, GDepthBuffer.GetFormat());
@@ -1205,61 +1246,12 @@ void DoRender()
 	{
 		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
-		std::vector<VkWriteDescriptorSet> DSWrites;
-		std::vector<VkDescriptorBufferInfo> BufferInfos;
-		std::vector<VkDescriptorImageInfo> ImageInfos;
-		{
-			VkDescriptorBufferInfo BufferInfo;
-			MemZero(BufferInfo);
-			BufferInfo.buffer = GViewUB.Buffer;
-			BufferInfo.offset = GViewUB.GetBindOffset();
-			BufferInfo.range = GViewUB.GetSize();
-			BufferInfos.push_back(BufferInfo);
+		FWriteDescriptors WriteDescriptors;
+		WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+		WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+		WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GCheckerboardTexture.ImageView);
+		vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 
-			MemZero(BufferInfo);
-			BufferInfo.buffer = GObjUB.Buffer;
-			BufferInfo.offset = GObjUB.GetBindOffset();
-			BufferInfo.range = GObjUB.GetSize();
-			BufferInfos.push_back(BufferInfo);
-
-			VkWriteDescriptorSet DSWrite;
-			MemZero(DSWrite);
-			DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			DSWrite.dstSet = DescriptorSet;
-			DSWrite.dstBinding = 0;
-			DSWrite.descriptorCount = 1;
-			DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			DSWrite.pBufferInfo = &BufferInfos[0];
-			DSWrites.push_back(DSWrite);
-
-			MemZero(DSWrite);
-			DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			DSWrite.dstSet = DescriptorSet;
-			DSWrite.dstBinding = 1;
-			DSWrite.descriptorCount = 1;
-			DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			DSWrite.pBufferInfo = &BufferInfos[1];
-			DSWrites.push_back(DSWrite);
-
-			VkDescriptorImageInfo ImageInfo;
-			MemZero(ImageInfo);
-			ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			ImageInfo.imageView = GSceneColor.GetImageView();//GColorImage.GetImageView();
-			ImageInfo.sampler = GSampler.Sampler;
-			ImageInfos.push_back(ImageInfo);
-
-			MemZero(DSWrite);
-			DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			DSWrite.dstSet = DescriptorSet;
-			DSWrite.dstBinding = 2;
-			DSWrite.descriptorCount = 1;
-			//DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-			DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			DSWrite.pImageInfo = &ImageInfos[0];
-			DSWrites.push_back(DSWrite);
-		}
-
-		vkUpdateDescriptorSets(GDevice.Device, DSWrites.size(), &DSWrites[0], 0, nullptr);
 		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 	{
@@ -1342,12 +1334,14 @@ void DoDeinit()
 
 	GDepthBuffer.Destroy();
 	GSceneColor.Destroy();
+	GCheckerboardTexture.Destroy();
 
 	GDescriptorPool.Destroy();
 
 	GTestComputePostPSO.Destroy(GDevice.Device);
 	GTestComputePSO.Destroy(GDevice.Device);
 	GTestPSO.Destroy(GDevice.Device);
+	GFillTexturePSO.Destroy(GDevice.Device);
 
 	GSwapchain.Destroy();
 
