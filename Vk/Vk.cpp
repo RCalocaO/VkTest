@@ -872,32 +872,13 @@ FObjectCache GObjectCache;
 
 
 template <typename TFillLambda>
-void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
-{
-	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
-	void* Data = StagingBuffer.GetMappedData();
-	check(Data);
-	auto* Vertex = (FVertex*)Data;
-	Fill(Vertex);
-
-	{
-		VkBufferCopy Region;
-		MemZero(Region);
-		Region.srcOffset = StagingBuffer.GetBindOffset();
-		Region.size = StagingBuffer.GetSize();
-		Region.dstOffset = DestBuffer->GetBindOffset();
-		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestBuffer->Buffer, 1, &Region);
-	}
-}
-
-template <typename TFillLambda>
 void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 {
 	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 	CmdBuffer->Begin();
 	FBuffer StagingBuffer;
 	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size);
-
+	FlushMappedBuffer(GDevice.Device, &StagingBuffer);
 	CmdBuffer->End();
 	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
@@ -1127,6 +1108,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 					++P;
 				}
 			}
+			FlushMappedBuffer(GDevice.Device, &StagingBuffer);
 			VkBufferImageCopy Region;
 			MemZero(Region);
 			Region.bufferOffset = StagingBuffer.GetBindOffset();

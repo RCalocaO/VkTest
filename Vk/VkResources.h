@@ -1305,3 +1305,34 @@ protected:
 	std::vector<VkDescriptorBufferInfo*> BufferInfos;
 	std::vector<VkDescriptorImageInfo*> ImageInfos;
 };
+
+
+inline void FlushMappedBuffer(VkDevice Device, FBuffer* Buffer)
+{
+	VkMappedMemoryRange Range;
+	MemZero(Range);
+	Range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+	Range.offset = Buffer->GetBindOffset();
+	Range.memory = Buffer->SubAlloc->GetHandle();
+	Range.size = Buffer->GetSize();
+	vkInvalidateMappedMemoryRanges(Device, 1, &Range);
+}
+
+template <typename TFillLambda>
+inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
+{
+	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	void* Data = StagingBuffer.GetMappedData();
+	check(Data);
+	auto* Vertex = (FVertex*)Data;
+	Fill(Vertex);
+
+	{
+		VkBufferCopy Region;
+		MemZero(Region);
+		Region.srcOffset = StagingBuffer.GetBindOffset();
+		Region.size = StagingBuffer.GetSize();
+		Region.dstOffset = DestBuffer->GetBindOffset();
+		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestBuffer->Buffer, 1, &Region);
+	}
+}
