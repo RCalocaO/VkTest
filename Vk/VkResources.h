@@ -839,7 +839,7 @@ struct FCmdBuffer
 	enum class EState
 	{
 		ReadyForBegin,
-		Beginned,
+		Begun,
 		Ended,
 		Submitted,
 		InsideRenderPass,
@@ -890,12 +890,12 @@ struct FCmdBuffer
 		Info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 		checkVk(vkBeginCommandBuffer(CmdBuffer, &Info));
 
-		State = EState::Beginned;
+		State = EState::Begun;
 	}
 
 	void End()
 	{
-		check(State == EState::Beginned);
+		check(State == EState::Begun);
 		checkVk(vkEndCommandBuffer(CmdBuffer));
 		State = EState::Ended;
 	}
@@ -908,7 +908,7 @@ struct FCmdBuffer
 
 		vkCmdEndRenderPass(CmdBuffer);
 
-		State = EState::Beginned;
+		State = EState::Begun;
 	}
 
 	void WaitForFence()

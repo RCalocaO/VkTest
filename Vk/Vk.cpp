@@ -483,7 +483,7 @@ FSwapchain GSwapchain;
 
 void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer)
 {
-	check(State == EState::Beginned);
+	check(State == EState::Begun);
 
 	static uint32 N = 0;
 	N = (N + 1) % 256;
@@ -964,26 +964,13 @@ void TestCompute(FCmdBuffer* CmdBuffer)
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 #endif
-void DoRender()
+
+static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
 {
-	if (GQuitting)
-	{
-		return;
-	}
-	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
-	CmdBuffer->Begin();
+	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
+	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(RenderPass->RenderPass, ImageView, DepthBuffer->GetImageView(), Width, Height));
 
-	GSwapchain.AcquireNextImage();
-
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-
-	//TestCompute(CmdBuffer);
-
-	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
-	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(GSwapchain.GetWidth(), GSwapchain.GetHeight(), 1, &ColorFormat, GDepthBuffer.GetFormat());
-	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateColorDepthFramebuffer(RenderPass->RenderPass, GSwapchain.GetAcquiredImageView(), GDepthBuffer.ImageView.ImageView, GSwapchain.GetWidth(), GSwapchain.GetHeight()));
-
-	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, GSwapchain.GetWidth(), GSwapchain.GetHeight(), RenderPass->RenderPass);
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, Width, Height, RenderPass->RenderPass);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
@@ -1001,23 +988,22 @@ void DoRender()
 		WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 		WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
 		WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GCheckerboardTexture.ImageView);
-		vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+		vkUpdateDescriptorSets(Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 
 		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
 	{
 		VkViewport Viewport;
 		MemZero(Viewport);
-		Viewport.x = (float)GSwapchain.GetWidth();
-		Viewport.width = (float)GSwapchain.GetWidth();
-		Viewport.height = (float)GSwapchain.GetHeight();
+		Viewport.width = (float)Width;
+		Viewport.height = (float)Height;
 		Viewport.maxDepth = 1;
 		vkCmdSetViewport(CmdBuffer->CmdBuffer, 0, 1, &Viewport);
 
 		VkRect2D Scissor;
 		MemZero(Scissor);
-		Scissor.extent.width = GSwapchain.GetWidth();
-		Scissor.extent.height = GSwapchain.GetHeight();
+		Scissor.extent.width = Width;
+		Scissor.extent.height = Height;
 		vkCmdSetScissor(CmdBuffer->CmdBuffer, 0, 1, &Scissor);
 	}
 
@@ -1028,6 +1014,25 @@ void DoRender()
 	}
 
 	CmdBuffer->EndRenderPass();
+}
+
+void DoRender()
+{
+	if (GQuitting)
+	{
+		return;
+	}
+	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
+	CmdBuffer->Begin();
+
+	GSwapchain.AcquireNextImage();
+
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+	//TestCompute(CmdBuffer);
+
+	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
+	RenderFrame(GDevice.Device, CmdBuffer, GSwapchain.GetWidth(), GSwapchain.GetHeight(), GSwapchain.GetAcquiredImageView(), ColorFormat, &GDepthBuffer);
 
 	// Blit back buffer into scene color
 	{
