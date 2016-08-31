@@ -1567,3 +1567,20 @@ inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, 
 		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestBuffer->Buffer, 1, &Region);
 	}
 }
+
+inline void CopyColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
+{
+	check(CmdBuffer->State == FCmdBuffer::EState::Begun);
+	VkImageCopy CopyRegion;
+	MemZero(CopyRegion);
+	CopyRegion.extent.width = Width;
+	CopyRegion.extent.height = Height;
+	CopyRegion.extent.depth = 1;
+	CopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	CopyRegion.srcSubresource.layerCount = 1;
+	CopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	CopyRegion.dstSubresource.layerCount = 1;
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, SrcImage, SrcCurrentLayout, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, DstImage, DstCurrentLayout, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCmdCopyImage(CmdBuffer->CmdBuffer, SrcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, DstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &CopyRegion);
+};
