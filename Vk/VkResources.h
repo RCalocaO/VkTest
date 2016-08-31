@@ -1044,26 +1044,7 @@ struct FFramebuffer : public FRecyclableResource
 	VkFramebuffer Framebuffer = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
 
-	void CreateColorOnly(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, uint32 InWidth, uint32 InHeight)
-	{
-		Device = InDevice;
-		Width = InWidth;
-		Height = InHeight;
-
-		VkFramebufferCreateInfo CreateInfo;
-		MemZero(CreateInfo);
-		CreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		CreateInfo.renderPass = RenderPass;
-		CreateInfo.attachmentCount = 1;
-		CreateInfo.pAttachments = &ColorAttachment;
-		CreateInfo.width = Width;
-		CreateInfo.height = Height;
-		CreateInfo.layers = 1;
-
-		checkVk(vkCreateFramebuffer(Device, &CreateInfo, nullptr, &Framebuffer));
-	}
-
-	void CreateColorAndDepth(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, VkImageView DepthAttachment, uint32 InWidth, uint32 InHeight)
+	void Create(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, VkImageView DepthAttachment, uint32 InWidth, uint32 InHeight)
 	{
 		Device = InDevice;
 		Width = InWidth;
@@ -1075,7 +1056,7 @@ struct FFramebuffer : public FRecyclableResource
 		MemZero(CreateInfo);
 		CreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		CreateInfo.renderPass = RenderPass;
-		CreateInfo.attachmentCount = 2;
+		CreateInfo.attachmentCount = DepthAttachment == VK_NULL_HANDLE ? 1 : 2;
 		CreateInfo.pAttachments = Attachments;
 		CreateInfo.width = Width;
 		CreateInfo.height = Height;
