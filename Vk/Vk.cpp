@@ -11,7 +11,7 @@ struct FCmdBuffer;
 static FBuffer GObjVB;
 static Obj::FObj GObj;
 FDescriptorPool GDescriptorPool;
-FBuffer GTriVB;
+FBuffer GQuadVB;
 
 struct FViewUB
 {
@@ -25,6 +25,7 @@ struct FObjUB
 	FMatrix4x4 Obj;
 };
 FBuffer GObjUB;
+FBuffer GIdentityUB;
 
 FImage2DWithView GCheckerboardTexture;
 FImage2DWithView GSceneColor;
@@ -848,27 +849,38 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		return false;
 	}
 
-	GTriVB.Create(GDevice.Device, sizeof(FVertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GQuadVB.Create(GDevice.Device, sizeof(FVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	auto FillTri = [](void* Data)
 	{
 		check(Data);
 		auto* Vertex = (FVertex*)Data;
-		Vertex[0].x = -0.5f; Vertex[0].y = -0.5f; Vertex[0].z = -1; Vertex[0].Color = 0xffff0000;
-		Vertex[1].x = 0.1f; Vertex[1].y = -0.5f; Vertex[1].z = -1; Vertex[1].Color = 0xff00ff00;
-		Vertex[2].x = 0; Vertex[2].y = 0.5f; Vertex[2].z = -1; Vertex[2].Color = 0xff0000ff;
+		float Y = 10;
+		float Extent = 250;
+		Vertex[0].x = -Extent; Vertex[0].y = Y; Vertex[0].z = -Extent; Vertex[0].Color = 0xffff0000; Vertex[0].u = 0; Vertex[0].v = 0;
+		Vertex[1].x = Extent; Vertex[1].y = Y; Vertex[1].z = -Extent; Vertex[1].Color = 0xff00ff00; Vertex[1].u = 1; Vertex[1].v = 0;
+		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
+		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
 	};
-	MapAndFillBufferSync(&GTriVB, FillTri, sizeof(FVertex) * 3);
+	MapAndFillBufferSync(&GQuadVB, FillTri, sizeof(FVertex) * 4);
 
 	GViewUB.Create(GDevice.Device, sizeof(FViewUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	GObjUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	GIdentityUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 
 	FViewUB& ViewUB = *(FViewUB*)GViewUB.GetMappedData();
 	ViewUB.View = FMatrix4x4::GetIdentity();
 	ViewUB.View.Values[3 * 4 + 2] = -2;
 	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
 
-	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
-	ObjUB.Obj = FMatrix4x4::GetIdentity();
+	{
+		FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
+		ObjUB.Obj = FMatrix4x4::GetIdentity();
+	}
+
+	{
+		FObjUB& ObjUB = *(FObjUB*)GIdentityUB.GetMappedData();
+		ObjUB.Obj = FMatrix4x4::GetIdentity();
+	}
 
 	CreateAndFillTexture();
 
@@ -901,23 +913,36 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	}
 	ObjUB.Obj = FMatrix4x4::GetRotationY(ToRadians(AngleDegrees));
 
-	{
-		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+	auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
-		FWriteDescriptors WriteDescriptors;
-		WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-		WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-		WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
-		vkUpdateDescriptorSets(Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+	FWriteDescriptors WriteDescriptors;
+	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
+	vkUpdateDescriptorSets(Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
-	}
+	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 
-	{
-		VkDeviceSize Offset = 0;
-		vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GObjVB.Buffer, &Offset);
-		vkCmdDraw(CmdBuffer->CmdBuffer, GObj.Faces.size() * 3, 1, 0, 0);
-	}
+	VkDeviceSize Offset = 0;
+	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GObjVB.Buffer, &Offset);
+	vkCmdDraw(CmdBuffer->CmdBuffer, GObj.Faces.size() * 3, 1, 0, 0);
+}
+
+static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+{
+	auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+
+	FWriteDescriptors WriteDescriptors;
+	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
+	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GCheckerboardTexture.ImageView);
+	vkUpdateDescriptorSets(Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+
+	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+
+	VkDeviceSize Offset = 0;
+	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GQuadVB.Buffer, &Offset);
+	vkCmdDraw(CmdBuffer->CmdBuffer, 4, 1, 0, 0);
 }
 
 static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Height)
@@ -946,6 +971,7 @@ static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, ui
 
 	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);
 
+	DrawFloor(GfxPipeline, Device, CmdBuffer);
 	DrawCube(GfxPipeline, Device, CmdBuffer);
 
 	CmdBuffer->EndRenderPass();
@@ -1029,10 +1055,11 @@ void DoDeinit()
 	GObjectCache.Destroy();
 	GCmdBufferMgr.Destroy();
 
-	GTriVB.Destroy(GDevice.Device);
+	GQuadVB.Destroy(GDevice.Device);
 	GViewUB.Destroy(GDevice.Device);
 	GObjUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
+	GIdentityUB.Destroy(GDevice.Device);
 
 	GSceneColorAfterPost.Destroy();
 	GSampler.Destroy();
