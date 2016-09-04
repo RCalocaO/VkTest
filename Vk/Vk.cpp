@@ -35,6 +35,15 @@ FImage2DWithView GHeightMap;
 FSampler GSampler;
 
 
+
+struct FPosColorUVVertex
+{
+	float x, y, z;
+	uint32 Color;
+	float u, v;
+};
+FVertexFormat GPosColorUVFormat;
+
 bool GQuitting = false;
 
 static bool GSkipValidation = false;
@@ -162,17 +171,10 @@ struct FTestPostComputePSO : public FComputePSO
 };
 FTestPostComputePSO GTestComputePostPSO;
 
-struct FVertex
-{
-	float x, y, z;
-	uint32 Color;
-	float u, v;
-};
-
 
 struct FGfxPipeline : public FBasePipeline
 {
-	void Create(VkDevice Device, FGfxPSO* PSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	void Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, VkRenderPass RenderPass)
 	{
 		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 		PSO->SetupShaderStages(ShaderStages);
@@ -184,33 +186,7 @@ struct FGfxPipeline : public FBasePipeline
 		CreateInfo.pSetLayouts = &PSO->DSLayout;
 		checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
 
-		VkVertexInputBindingDescription VBDesc;
-		MemZero(VBDesc);
-		VBDesc.binding = 0;
-		VBDesc.stride = sizeof(FVertex);
-		VBDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-		VkVertexInputAttributeDescription VIADesc[3];
-		MemZero(VIADesc);
-		//VIADesc.location = 0;
-		VIADesc[0].binding = 0;
-		VIADesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		VIADesc[0].offset = offsetof(FVertex, x);
-		//VIADesc[1].binding = 0;
-		VIADesc[1].location = 1;
-		VIADesc[1].format = VK_FORMAT_R8G8B8A8_UNORM;
-		VIADesc[1].offset = offsetof(FVertex, Color);
-		VIADesc[2].location = 2;
-		VIADesc[2].format = VK_FORMAT_R32G32_SFLOAT;
-		VIADesc[2].offset = offsetof(FVertex, u);
-
-		VkPipelineVertexInputStateCreateInfo VIInfo;
-		MemZero(VIInfo);
-		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		VIInfo.vertexBindingDescriptionCount = 1;
-		VIInfo.pVertexBindingDescriptions = &VBDesc;
-		VIInfo.vertexAttributeDescriptionCount = ARRAYSIZE(VIADesc);
-		VIInfo.pVertexAttributeDescriptions = VIADesc;
+		VkPipelineVertexInputStateCreateInfo VIInfo = VertexFormat->GetCreateInfo();
 
 		VkPipelineInputAssemblyStateCreateInfo IAInfo;
 		MemZero(IAInfo);
@@ -570,9 +546,9 @@ struct FObjectCache
 		return NewFramebuffer;
 	}
 
-	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, VkRenderPass RenderPass)
 	{
-		FGfxPSOLayout Layout(GfxPSO, Width, Height, RenderPass);
+		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass);
 		auto Found = GfxPipelines.find(Layout);
 		if (Found != GfxPipelines.end())
 		{
@@ -580,7 +556,7 @@ struct FObjectCache
 		}
 
 		auto* NewPipeline = new FGfxPipeline;
-		NewPipeline->Create(Device->Device, GfxPSO, Width, Height, RenderPass);
+		NewPipeline->Create(Device->Device, GfxPSO, VF, Width, Height, RenderPass);
 		GfxPipelines[Layout] = NewPipeline;
 		return NewPipeline;
 	}
@@ -728,17 +704,24 @@ static bool LoadShadersAndGeometry()
 		check(GFillTexturePSO.Create(GDevice.Device, "../Shaders/FillTexture.comp.spv"));
 	}
 
+	// Setup Vertex Format
+	GPosColorUVFormat.AddVertexBuffer(0, sizeof(FPosColorUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
+	GPosColorUVFormat.AddVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(FPosColorUVVertex, x));
+	GPosColorUVFormat.AddVertexAttribute(0, 1, VK_FORMAT_R8G8B8A8_UNORM, offsetof(FPosColorUVVertex, Color));
+	GPosColorUVFormat.AddVertexAttribute(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(FPosColorUVVertex, u));
+
+	// Load and fill geometry
 	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
 	{
 		return false;
 	}
 	//GObj.Faces.resize(1);
-	GObjVB.Create(GDevice.Device, sizeof(FVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GObjVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 
 	auto FillObj = [](void* Data)
 	{
 		check(Data);
-		auto* Vertex = (FVertex*)Data;
+		auto* Vertex = (FPosColorUVVertex*)Data;
 		for (uint32 Index = 0; Index < GObj.Faces.size(); ++Index)
 		{
 			auto& Face = GObj.Faces[Index];
@@ -755,7 +738,7 @@ static bool LoadShadersAndGeometry()
 		}
 	};
 
-	MapAndFillBufferSync(&GObjVB, FillObj, sizeof(FVertex) * GObj.Faces.size() * 3);
+	MapAndFillBufferSync(&GObjVB, FillObj, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3);
 
 	return true;
 }
@@ -849,11 +832,11 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		return false;
 	}
 
-	GQuadVB.Create(GDevice.Device, sizeof(FVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GQuadVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	auto FillTri = [](void* Data)
 	{
 		check(Data);
-		auto* Vertex = (FVertex*)Data;
+		auto* Vertex = (FPosColorUVVertex*)Data;
 		float Y = 10;
 		float Extent = 250;
 		Vertex[0].x = -Extent; Vertex[0].y = Y; Vertex[0].z = -Extent; Vertex[0].Color = 0xffff0000; Vertex[0].u = 0; Vertex[0].v = 0;
@@ -861,7 +844,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
 		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
 	};
-	MapAndFillBufferSync(&GQuadVB, FillTri, sizeof(FVertex) * 4);
+	MapAndFillBufferSync(&GQuadVB, FillTri, sizeof(FPosColorUVVertex) * 4);
 
 	GViewUB.Create(GDevice.Device, sizeof(FViewUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	GObjUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
@@ -966,7 +949,7 @@ static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, ui
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
 	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height));
 
-	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, Width, Height, RenderPass->RenderPass);
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass->RenderPass);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);

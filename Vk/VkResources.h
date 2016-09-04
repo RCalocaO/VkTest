@@ -623,11 +623,53 @@ struct FGfxPSO : public FPSO
 	}
 };
 
+struct FVertexFormat
+{
+	std::vector<VkVertexInputBindingDescription> VertexBuffers;
+	std::vector<VkVertexInputAttributeDescription> VertexAttributes;
+
+	void AddVertexBuffer(uint32 Binding, uint32 Stride, VkVertexInputRate InputRate)
+	{
+		VkVertexInputBindingDescription VBDesc;
+		MemZero(VBDesc);
+		VBDesc.binding = Binding;
+		VBDesc.stride = Stride;
+		VBDesc.inputRate = InputRate;
+
+		VertexBuffers.push_back(VBDesc);
+	}
+
+	void AddVertexAttribute(uint32 Binding, uint32 Location, VkFormat Format, uint32 Offset)
+	{
+		VkVertexInputAttributeDescription VIADesc;
+		MemZero(VIADesc);
+		VIADesc.binding = Binding;
+		VIADesc.location = Location;
+		VIADesc.format = Format;
+		VIADesc.offset = Offset;
+		VertexAttributes.push_back(VIADesc);
+	}
+
+	VkPipelineVertexInputStateCreateInfo GetCreateInfo()
+	{
+		VkPipelineVertexInputStateCreateInfo VIInfo;
+		MemZero(VIInfo);
+		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		VIInfo.vertexBindingDescriptionCount = VertexBuffers.size();
+		VIInfo.pVertexBindingDescriptions = VertexBuffers.empty() ? nullptr : &VertexBuffers[0];
+		VIInfo.vertexAttributeDescriptionCount = VertexAttributes.size();
+		VIInfo.pVertexAttributeDescriptions = VertexAttributes.empty() ? nullptr : &VertexAttributes[0];
+
+		return VIInfo;
+	}
+};
+
 class FGfxPSOLayout
 {
 public:
-	FGfxPSOLayout(FGfxPSO* InGfxPSO, uint32 InWidth, uint32 InHeight, VkRenderPass InRenderPass)
+	FGfxPSOLayout(FGfxPSO* InGfxPSO, FVertexFormat* InVF, uint32 InWidth, uint32 InHeight, VkRenderPass InRenderPass)
 		: GfxPSO(InGfxPSO)
+		, VF(InVF)
 		, Width(InWidth)
 		, Height(InHeight)
 		, RenderPass(InRenderPass)
@@ -636,10 +678,11 @@ public:
 
 	friend inline bool operator < (const FGfxPSOLayout& A, const FGfxPSOLayout& B)
 	{
-		return A.Width < B.Width && A.Height < B.Height && A.GfxPSO < B.GfxPSO && A.RenderPass < B.RenderPass;
+		return A.Width < B.Width && A.Height < B.Height && A.GfxPSO < B.GfxPSO && A.VF < B.VF && A.RenderPass < B.RenderPass;
 	}
 protected:
 	FGfxPSO* GfxPSO;
+	FVertexFormat* VF;
 	uint32 Width;
 	uint32 Height;
 	VkRenderPass RenderPass;
@@ -1550,8 +1593,7 @@ inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, 
 	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	void* Data = StagingBuffer.GetMappedData();
 	check(Data);
-	auto* Vertex = (FVertex*)Data;
-	Fill(Vertex);
+	Fill(Data);
 
 	{
 		VkBufferCopy Region;
@@ -1570,8 +1612,7 @@ inline void MapAndFillImageSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, F
 	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	void* Data = StagingBuffer.GetMappedData();
 	check(Data);
-	auto* Vertex = (FVertex*)Data;
-	Fill(Vertex, DestImage->Width, DestImage->Height);
+	Fill(Data, DestImage->Width, DestImage->Height);
 
 	{
 		VkBufferImageCopy Region;
