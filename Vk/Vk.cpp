@@ -891,14 +891,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	return true;
 }
 
-static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ColorImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
+static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
-	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height));
-
-	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, Width, Height, RenderPass->RenderPass);
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
-
 	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
 	static float AngleDegrees = 0;
 	{
@@ -918,26 +912,41 @@ static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, ui
 
 		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 	}
-	{
-		VkViewport Viewport;
-		MemZero(Viewport);
-		Viewport.width = (float)Width;
-		Viewport.height = (float)Height;
-		Viewport.maxDepth = 1;
-		vkCmdSetViewport(CmdBuffer->CmdBuffer, 0, 1, &Viewport);
-
-		VkRect2D Scissor;
-		MemZero(Scissor);
-		Scissor.extent.width = Width;
-		Scissor.extent.height = Height;
-		vkCmdSetScissor(CmdBuffer->CmdBuffer, 0, 1, &Scissor);
-	}
 
 	{
 		VkDeviceSize Offset = 0;
 		vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GObjVB.Buffer, &Offset);
 		vkCmdDraw(CmdBuffer->CmdBuffer, GObj.Faces.size() * 3, 1, 0, 0);
 	}
+}
+
+static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Height)
+{
+	VkViewport Viewport;
+	MemZero(Viewport);
+	Viewport.width = (float)Width;
+	Viewport.height = (float)Height;
+	Viewport.maxDepth = 1;
+	vkCmdSetViewport(CmdBuffer, 0, 1, &Viewport);
+
+	VkRect2D Scissor;
+	MemZero(Scissor);
+	Scissor.extent.width = Width;
+	Scissor.extent.height = Height;
+	vkCmdSetScissor(CmdBuffer, 0, 1, &Scissor);
+}
+
+static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ColorImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
+{
+	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
+	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height));
+
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, Width, Height, RenderPass->RenderPass);
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
+
+	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);
+
+	DrawCube(GfxPipeline, Device, CmdBuffer);
 
 	CmdBuffer->EndRenderPass();
 }
