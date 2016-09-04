@@ -342,10 +342,10 @@ struct FImageView
 		Info.image = Image;
 		Info.viewType = ViewType;
 		Info.format = Format;
-		Info.components.r = VK_COMPONENT_SWIZZLE_R;
-		Info.components.g = VK_COMPONENT_SWIZZLE_G;
-		Info.components.b = VK_COMPONENT_SWIZZLE_B;
-		Info.components.a = VK_COMPONENT_SWIZZLE_A;
+		Info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		Info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		Info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		Info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		Info.subresourceRange.aspectMask = ImageAspect;
 		Info.subresourceRange.levelCount = 1;
 		Info.subresourceRange.layerCount = 1;
@@ -397,6 +397,20 @@ inline VkImageAspectFlags GetImageAspectFlags(VkFormat Format)
 	default:
 		return VK_IMAGE_ASPECT_COLOR_BIT;
 	}
+}
+
+static inline uint32 GetFormatBitsPerPixel(VkFormat Format)
+{
+	switch (Format)
+	{
+	case VK_FORMAT_R32_SFLOAT:
+		return 32;
+
+	default:
+		break;
+	}
+	check(0);
+	return 0;
 }
 
 
@@ -1549,6 +1563,31 @@ inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, 
 	}
 }
 
+template <typename TFillLambda>
+inline void MapAndFillImageSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, FImage* DestImage, TFillLambda Fill)
+{
+	uint32 Size = DestImage->Width * DestImage->Height * GetFormatBitsPerPixel(DestImage->Format) / 8;
+	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	void* Data = StagingBuffer.GetMappedData();
+	check(Data);
+	auto* Vertex = (FVertex*)Data;
+	Fill(Vertex, DestImage->Width, DestImage->Height);
+
+	{
+		VkBufferImageCopy Region;
+		MemZero(Region);
+		Region.bufferOffset = StagingBuffer.GetBindOffset();
+		Region.bufferRowLength = DestImage->Width;
+		Region.bufferImageHeight = DestImage->Height;
+		Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		Region.imageSubresource.layerCount = 1;
+		Region.imageExtent.width = DestImage->Width;
+		Region.imageExtent.height = DestImage->Height;
+		Region.imageExtent.depth = 1;
+		vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestImage->Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+	}
+}
+
 inline void CopyColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
 {
 	check(CmdBuffer->State == FCmdBuffer::EState::Begun);
@@ -1564,4 +1603,24 @@ inline void CopyColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, V
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, SrcImage, SrcCurrentLayout, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, DstImage, DstCurrentLayout, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCmdCopyImage(CmdBuffer->CmdBuffer, SrcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, DstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &CopyRegion);
+};
+
+inline void BlitColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
+{
+	check(CmdBuffer->State == FCmdBuffer::EState::Begun);
+	VkImageBlit BlitRegion;
+	MemZero(BlitRegion);
+	BlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	BlitRegion.srcOffsets[1].x = Width;
+	BlitRegion.srcOffsets[1].y = Height;
+	BlitRegion.srcOffsets[1].z = 1;
+	BlitRegion.srcSubresource.layerCount = 1;
+	BlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	BlitRegion.dstOffsets[1].x = Width;
+	BlitRegion.dstOffsets[1].y = Height;
+	BlitRegion.dstOffsets[1].z = 1;
+	BlitRegion.dstSubresource.layerCount = 1;
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, SrcImage, SrcCurrentLayout, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, DstImage, DstCurrentLayout, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCmdBlitImage(CmdBuffer->CmdBuffer, SrcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, DstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &BlitRegion, VK_FILTER_NEAREST);
 };

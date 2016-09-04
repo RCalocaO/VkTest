@@ -864,70 +864,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	return true;
 }
 
-#if 0
-void TestCompute(FCmdBuffer* CmdBuffer)
-{
-	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GTestComputePSO);
-	auto* ComputePostPipeline = GObjectCache.GetOrCreateComputePipeline(&GTestComputePostPSO);
-
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
-
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-
-	{
-		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
-
-		VkDescriptorImageInfo ImageInfo;
-		MemZero(ImageInfo);
-		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-		ImageInfo.imageView = GColorImage.GetImageView();
-		//ImageInfo.sampler = GSampler.Sampler;
-
-		VkWriteDescriptorSet DSWrite;
-		MemZero(DSWrite);
-		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		DSWrite.dstSet = DescriptorSet;
-		DSWrite.dstBinding = 0;
-		DSWrite.descriptorCount = 1;
-		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		DSWrite.pImageInfo = &ImageInfo;
-		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
-	}
-
-	vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
-
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePostPipeline->Pipeline);
-
-	{
-		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePostPSO.DSLayout);
-
-		VkDescriptorImageInfo ImageInfo;
-		MemZero(ImageInfo);
-		ImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-		ImageInfo.imageView = GColorImage.GetImageView();
-		//ImageInfo.sampler = GSampler.Sampler;
-
-		VkWriteDescriptorSet DSWrite;
-		MemZero(DSWrite);
-		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		DSWrite.dstSet = DescriptorSet;
-		DSWrite.dstBinding = 0;
-		DSWrite.descriptorCount = 1;
-		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		DSWrite.pImageInfo = &ImageInfo;
-		vkUpdateDescriptorSets(GDevice.Device, 1, &DSWrite, 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ComputePostPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
-	}
-
-	//vkCmdDispatch(CmdBuffer->CmdBuffer, GColorImage.Image.Width / 8, GColorImage.Image.Height / 8, 1);
-
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GColorImage.Image.Image, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-}
-#endif
-
 static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ColorImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
 {
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
@@ -1024,7 +960,7 @@ void DoRender()
 	{
 		uint32 Width = min(GSwapchain.GetWidth(), GSceneColorAfterPost.GetWidth());
 		uint32 Height = min(GSwapchain.GetHeight(), GSceneColorAfterPost.GetHeight());
-		CopyColorImage(CmdBuffer, Width, Height, GSceneColorAfterPost.GetImage(), VK_IMAGE_LAYOUT_GENERAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
+		BlitColorImage(CmdBuffer, Width, Height, GSceneColorAfterPost.GetImage(), VK_IMAGE_LAYOUT_GENERAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
 	}
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
