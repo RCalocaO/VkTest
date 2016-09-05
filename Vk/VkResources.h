@@ -102,6 +102,7 @@ struct FInstance
 		{
 			static const char* SkipPrefixes[] =
 			{
+				"ObjectTracker",
 				"OBJTRACK",
 				"loader",
 				"MEM",
@@ -210,7 +211,7 @@ struct FDevice
 	}
 };
 
-struct FBuffer : public FRecyclableResource
+struct FBuffer
 {
 	void Create(VkDevice InDevice, uint64 InSize, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
 	{
@@ -263,7 +264,7 @@ struct FBuffer : public FRecyclableResource
 };
 
 
-struct FImage : public FRecyclableResource
+struct FImage
 {
 	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips)
 	{
@@ -495,7 +496,7 @@ struct FSampler
 	}
 };
 
-struct FShader : public FRecyclableResource
+struct FShader
 {
 	bool Create(const char* Filename, VkDevice Device)
 	{
@@ -805,7 +806,7 @@ struct FDescriptorPool
 	VkDescriptorPool Pool = VK_NULL_HANDLE;
 };
 
-struct FFence : public FRecyclableResource
+struct FFence
 {
 	VkFence Fence = VK_NULL_HANDLE;
 	uint64 FenceSignaledCounter = 0;
@@ -868,7 +869,7 @@ struct FFence : public FRecyclableResource
 	}
 };
 
-struct FSemaphore : public FRecyclableResource
+struct FSemaphore
 {
 	VkSemaphore Semaphore = VK_NULL_HANDLE;
 
@@ -972,6 +973,7 @@ struct FCmdBuffer
 	{
 		check(State == EState::Submitted);
 		Fence.Wait();
+		RefreshState();
 	}
 
 	void RefreshState()
@@ -1042,6 +1044,15 @@ struct FCmdBufferMgr
 
 	FCmdBuffer* AllocateCmdBuffer()
 	{
+		for (auto* CmdBuffer : CmdBuffers)
+		{
+			CmdBuffer->RefreshState();
+			if (CmdBuffer->State == FCmdBuffer::EState::ReadyForBegin)
+			{
+				return CmdBuffer;
+			}
+		}
+
 		auto* NewCmdBuffer = new FCmdBuffer;
 		NewCmdBuffer->Create(Device, Pool);
 		CmdBuffers.push_back(NewCmdBuffer);
@@ -1090,13 +1101,22 @@ struct FCmdBufferMgr
 		checkVk(vkQueueSubmit(Queue, 1, &Info, CmdBuffer->Fence.Fence));
 		CmdBuffer->Fence.State = FFence::EState::NotSignaled;
 		CmdBuffer->State = FCmdBuffer::EState::Submitted;
+		Update();
+	}
+
+	void Update()
+	{
+		for (auto* CmdBuffer : CmdBuffers)
+		{
+			CmdBuffer->RefreshState();
+		}
 	}
 
 	std::list<FCmdBuffer*> CmdBuffers;
 };
 
 
-struct FFramebuffer : public FRecyclableResource
+struct FFramebuffer
 {
 	VkFramebuffer Framebuffer = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
@@ -1180,7 +1200,7 @@ protected:
 };
 
 
-struct FRenderPass : public FRecyclableResource
+struct FRenderPass
 {
 	VkRenderPass RenderPass = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
@@ -1587,6 +1607,16 @@ inline void FlushMappedBuffer(VkDevice Device, FBuffer* Buffer)
 	vkInvalidateMappedMemoryRanges(Device, 1, &Range);
 }
 
+inline void CopyBuffer(FCmdBuffer* CmdBuffer, FBuffer* SrcBuffer, FBuffer* DestBuffer)
+{
+	VkBufferCopy Region;
+	MemZero(Region);
+	Region.srcOffset = SrcBuffer->GetBindOffset();
+	Region.size = SrcBuffer->GetSize();
+	Region.dstOffset = DestBuffer->GetBindOffset();
+	vkCmdCopyBuffer(CmdBuffer->CmdBuffer, SrcBuffer->Buffer, DestBuffer->Buffer, 1, &Region);
+}
+
 template <typename TFillLambda>
 inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 {
@@ -1595,14 +1625,7 @@ inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, 
 	check(Data);
 	Fill(Data);
 
-	{
-		VkBufferCopy Region;
-		MemZero(Region);
-		Region.srcOffset = StagingBuffer.GetBindOffset();
-		Region.size = StagingBuffer.GetSize();
-		Region.dstOffset = DestBuffer->GetBindOffset();
-		vkCmdCopyBuffer(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestBuffer->Buffer, 1, &Region);
-	}
+	CopyBuffer(CmdBuffer, &StagingBuffer, DestBuffer);
 }
 
 template <typename TFillLambda>
