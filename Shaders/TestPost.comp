@@ -11,8 +11,8 @@ layout (binding = 1, rgba8) uniform image2D RWImage;
 void main()
 {
 	if (
-	((gl_GlobalInvocationID.x % 4) == 0) ||
-	((gl_GlobalInvocationID.y % 4) == 0)
+	//((gl_GlobalInvocationID.x % 4) == 0) ||
+	((gl_GlobalInvocationID.y % 4) != 0)
 	)
 	{
 		vec4 Color0 = imageLoad(InImage, ivec2(gl_GlobalInvocationID.xy) + ivec2(-1, -1)) * 0.2;

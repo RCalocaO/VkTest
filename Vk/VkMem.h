@@ -1,7 +1,8 @@
+// Mem allocation
 
 #pragma once
 
-#include "Vk.h"
+#include "VkDevice.h"
 
 class FMemSubAlloc;
 
