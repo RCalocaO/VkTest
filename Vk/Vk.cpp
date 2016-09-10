@@ -382,14 +382,12 @@ void MapAndFillBufferSyncOneShotCmdBuffer(FBuffer* DestBuffer, TFillLambda Fill,
 {
 	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 	CmdBuffer->Begin();
-	FBuffer StagingBuffer;
+	FStagingBuffer* StagingBuffer = GStagingManager.RequestUploadBuffer(Size);
 	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size);
-	FlushMappedBuffer(GDevice.Device, &StagingBuffer);
+	FlushMappedBuffer(GDevice.Device, StagingBuffer);
 	CmdBuffer->End();
 	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
-
-	StagingBuffer.Destroy(GDevice.Device);
 }
 
 static bool LoadShadersAndGeometry()
