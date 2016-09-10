@@ -6,31 +6,40 @@
 #include "VkResources.h"
 #include "../Meshes/ObjLoader.h"
 
+
+static FInstance GInstance;
+static FDevice GDevice;
+static FMemManager GMemMgr;
+static FCmdBufferMgr GCmdBufferMgr;
+static FSwapchain GSwapchain;
+static FDescriptorPool GDescriptorPool;
+static FStagingManager GStagingManager;
+
+
 static FBuffer GObjVB;
 static Obj::FObj GObj;
-FDescriptorPool GDescriptorPool;
-FBuffer GQuadVB;
+static FBuffer GQuadVB;
 
 struct FViewUB
 {
 	FMatrix4x4 View;
 	FMatrix4x4 Proj;
 };
-FBuffer GViewUB;
+static FBuffer GViewUB;
 
 struct FObjUB
 {
 	FMatrix4x4 Obj;
 };
-FBuffer GObjUB;
-FBuffer GIdentityUB;
+static FBuffer GObjUB;
+static FBuffer GIdentityUB;
 
-FImage2DWithView GCheckerboardTexture;
-FImage2DWithView GSceneColor;
-FImage2DWithView GSceneColorAfterPost;
-FImage2DWithView GDepthBuffer;
-FImage2DWithView GHeightMap;
-FSampler GSampler;
+static FImage2DWithView GCheckerboardTexture;
+static FImage2DWithView GSceneColor;
+static FImage2DWithView GSceneColorAfterPost;
+static FImage2DWithView GDepthBuffer;
+static FImage2DWithView GHeightMap;
+static FSampler GSampler;
 
 
 
@@ -138,11 +147,6 @@ void FInstance::CreateDevice(FDevice& OutDevice)
 Found:
 	OutDevice.Create(Layers);
 }
-FDevice GDevice;
-
-FCmdBufferMgr GCmdBufferMgr;
-
-FInstance GInstance;
 
 
 
@@ -212,12 +216,6 @@ void FMemPage::Release(FMemSubAlloc* SubAlloc)
 		}
 	}
 }
-
-
-FMemManager GMemMgr;
-
-
-FSwapchain GSwapchain;
 
 
 void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer)
@@ -380,7 +378,7 @@ FObjectCache GObjectCache;
 
 
 template <typename TFillLambda>
-void MapAndFillBufferSync(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
+void MapAndFillBufferSyncOneShotCmdBuffer(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 {
 	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 	CmdBuffer->Begin();
@@ -492,7 +490,7 @@ static bool LoadShadersAndGeometry()
 		}
 	};
 
-	MapAndFillBufferSync(&GObjVB, FillObj, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GObjVB, FillObj, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3);
 
 	return true;
 }
@@ -524,7 +522,6 @@ void CreateAndFillTexture()
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GCheckerboardTexture.GetImage(), VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	FBuffer StagingBuffer;
 	{
 		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GHeightMap.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		auto FillHeightMap = [](void* Data, uint32 Width, uint32 Height)
@@ -539,8 +536,9 @@ void CreateAndFillTexture()
 				}
 			}
 		};
+		auto* StagingBuffer = GStagingManager.RequestUploadBufferForImage(&GHeightMap.Image);
 		MapAndFillImageSync(StagingBuffer, CmdBuffer, &GHeightMap.Image, FillHeightMap);
-		FlushMappedBuffer(GDevice.Device, &StagingBuffer);
+		FlushMappedBuffer(GDevice.Device, StagingBuffer);
 
 		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GHeightMap.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
@@ -548,8 +546,6 @@ void CreateAndFillTexture()
 	CmdBuffer->End();
 	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
-
-	StagingBuffer.Destroy(GDevice.Device);
 }
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
@@ -578,6 +574,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
 	GDescriptorPool.Create(GDevice.Device);
+	GStagingManager.Create(GDevice.Device, &GMemMgr);
 
 	GObjectCache.Create(&GDevice);
 
@@ -598,7 +595,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
 		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
 	};
-	MapAndFillBufferSync(&GQuadVB, FillTri, sizeof(FPosColorUVVertex) * 4);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GQuadVB, FillTri, sizeof(FPosColorUVVertex) * 4);
 
 	GViewUB.Create(GDevice.Device, sizeof(FViewUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	GObjUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
@@ -789,9 +786,6 @@ void DoDeinit()
 
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
 
-	GObjectCache.Destroy();
-	GCmdBufferMgr.Destroy();
-
 	GQuadVB.Destroy(GDevice.Device);
 	GViewUB.Destroy(GDevice.Device);
 	GObjUB.Destroy(GDevice.Device);
@@ -814,10 +808,9 @@ void DoDeinit()
 	GFillTexturePSO.Destroy(GDevice.Device);
 
 	GSwapchain.Destroy();
-
-#if 0
-	GResourceRecycler.Deinit();
-#endif
+	GStagingManager.Destroy();
+	GObjectCache.Destroy();
+	GCmdBufferMgr.Destroy();
 	GMemMgr.Destroy();
 	GDevice.Destroy();
 	GInstance.Destroy();

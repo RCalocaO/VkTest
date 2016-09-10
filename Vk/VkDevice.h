@@ -473,3 +473,17 @@ struct FCmdBufferMgr
 
 	std::list<FCmdBuffer*> CmdBuffers;
 };
+
+static inline uint32 GetFormatBitsPerPixel(VkFormat Format)
+{
+	switch (Format)
+	{
+	case VK_FORMAT_R32_SFLOAT:
+		return 32;
+
+	default:
+		break;
+	}
+	check(0);
+	return 0;
+}

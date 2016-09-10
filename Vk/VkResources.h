@@ -214,6 +214,12 @@ struct FStagingManager
 		return Buffer;
 	}
 
+	FStagingBuffer* RequestUploadBufferForImage(const FImage* Image)
+	{
+		uint32 Size = Image->Width * Image->Height * GetFormatBitsPerPixel(Image->Format) / 8;
+		return RequestUploadBuffer(Size);
+	}
+
 	void Update()
 	{
 		for (auto& Entry : Entries)
@@ -275,21 +281,6 @@ inline VkImageAspectFlags GetImageAspectFlags(VkFormat Format)
 		return VK_IMAGE_ASPECT_COLOR_BIT;
 	}
 }
-
-static inline uint32 GetFormatBitsPerPixel(VkFormat Format)
-{
-	switch (Format)
-	{
-	case VK_FORMAT_R32_SFLOAT:
-		return 32;
-
-	default:
-		break;
-	}
-	check(0);
-	return 0;
-}
-
 
 struct FImage2DWithView
 {
@@ -1070,18 +1061,16 @@ inline void MapAndFillBufferSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, 
 }
 
 template <typename TFillLambda>
-inline void MapAndFillImageSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, FImage* DestImage, TFillLambda Fill)
+inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FCmdBuffer* CmdBuffer, FImage* DestImage, TFillLambda Fill)
 {
-	uint32 Size = DestImage->Width * DestImage->Height * GetFormatBitsPerPixel(DestImage->Format) / 8;
-	StagingBuffer.Create(GDevice.Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
-	void* Data = StagingBuffer.GetMappedData();
+	void* Data = StagingBuffer->GetMappedData();
 	check(Data);
 	Fill(Data, DestImage->Width, DestImage->Height);
 
 	{
 		VkBufferImageCopy Region;
 		MemZero(Region);
-		Region.bufferOffset = StagingBuffer.GetBindOffset();
+		Region.bufferOffset = StagingBuffer->GetBindOffset();
 		Region.bufferRowLength = DestImage->Width;
 		Region.bufferImageHeight = DestImage->Height;
 		Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1089,8 +1078,10 @@ inline void MapAndFillImageSync(FBuffer& StagingBuffer, FCmdBuffer* CmdBuffer, F
 		Region.imageExtent.width = DestImage->Width;
 		Region.imageExtent.height = DestImage->Height;
 		Region.imageExtent.depth = 1;
-		vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer.Buffer, DestImage->Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+		vkCmdCopyBufferToImage(CmdBuffer->CmdBuffer, StagingBuffer->Buffer, DestImage->Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
 	}
+
+	StagingBuffer->SetFence(CmdBuffer);
 }
 
 inline void CopyColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
