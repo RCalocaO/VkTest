@@ -309,9 +309,11 @@ struct FCmdBuffer
 
 	void WaitForFence()
 	{
-		check(State == EState::Submitted);
-		Fence.Wait();
-		RefreshState();
+		if (State == EState::Submitted)
+		{
+			Fence.Wait();
+			RefreshState();
+		}
 	}
 
 	void RefreshState()

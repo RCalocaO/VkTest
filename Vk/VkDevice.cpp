@@ -299,6 +299,105 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	checkVk(vkCreateRenderPass(Device, &RenderPassInfo, nullptr, &RenderPass));
 }
 
+FGfxPipeline::FGfxPipeline()
+{
+	MemZero(IAInfo);
+	IAInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	IAInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	//IAInfo.primitiveRestartEnable = VK_FALSE;
+
+	MemZero(Viewport);
+	//Viewport.x = 0;
+	//Viewport.y = 0;
+	//Viewport.width = (float)Width;
+	//Viewport.height = (float)Height;
+	//Viewport.minDepth = 0;
+	Viewport.maxDepth = 1;
+
+	MemZero(Scissor);
+	//scissors.offset = { 0, 0 };
+	//Scissor.extent = { Width, Height };
+
+	MemZero(ViewportInfo);
+	ViewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	ViewportInfo.viewportCount = 1;
+	ViewportInfo.pViewports = &Viewport;
+	ViewportInfo.scissorCount = 1;
+	ViewportInfo.pScissors = &Scissor;
+
+	MemZero(RSInfo);
+	RSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	//RSInfo.depthClampEnable = VK_FALSE;
+	//RSInfo.rasterizerDiscardEnable = VK_FALSE;
+	RSInfo.polygonMode = VK_POLYGON_MODE_FILL;
+	RSInfo.cullMode = VK_CULL_MODE_NONE;
+	RSInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	//RSInfo.depthBiasEnable = VK_FALSE;
+	//RSInfo.depthBiasConstantFactor = 0;
+	//RSInfo.depthBiasClamp = 0;
+	//RSInfo.depthBiasSlopeFactor = 0;
+	RSInfo.lineWidth = 1;
+
+	MemZero(MSInfo);
+	MSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	MSInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	//MSInfo.sampleShadingEnable = VK_FALSE;
+	//MSInfo.minSampleShading = 0;
+	//MSInfo.pSampleMask = NULL;
+	//MSInfo.alphaToCoverageEnable = VK_FALSE;
+	//MSInfo.alphaToOneEnable = VK_FALSE;
+
+	MemZero(Stencil);
+	Stencil.failOp = VK_STENCIL_OP_KEEP;
+	Stencil.passOp = VK_STENCIL_OP_KEEP;
+	Stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+	Stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+	//Stencil.compareMask = 0;
+	//Stencil.writeMask = 0;
+	//Stencil.reference = 0;
+
+	MemZero(DSInfo);
+	DSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	DSInfo.depthTestEnable = VK_TRUE;
+	DSInfo.depthWriteEnable = VK_TRUE;
+	DSInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+	//DSInfo.depthBoundsTestEnable = VK_FALSE;
+	//DSInfo.stencilTestEnable = VK_FALSE;
+	DSInfo.front = Stencil;
+	DSInfo.back = Stencil;
+	//DSInfo.minDepthBounds = 0;
+	//DSInfo.maxDepthBounds = 0;
+
+	MemZero(AttachState);
+	//AtachState.blendEnable = VK_FALSE;
+	AttachState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+	AttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+	AttachState.colorBlendOp = VK_BLEND_OP_ADD;
+	AttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	AttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	AttachState.alphaBlendOp = VK_BLEND_OP_ADD;
+	AttachState.colorWriteMask = 0xf;
+
+	MemZero(CBInfo);
+	CBInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	//CBInfo.logicOpEnable = VK_FALSE;
+	CBInfo.logicOp = VK_LOGIC_OP_CLEAR;
+	CBInfo.attachmentCount = 1;
+	CBInfo.pAttachments = &AttachState;
+	//CBInfo.blendConstants[0] = 0.0;
+	//CBInfo.blendConstants[1] = 0.0;
+	//CBInfo.blendConstants[2] = 0.0;
+	//CBInfo.blendConstants[3] = 0.0;
+
+	Dynamic[0] = VK_DYNAMIC_STATE_VIEWPORT;
+	Dynamic[1] = VK_DYNAMIC_STATE_SCISSOR;
+
+	MemZero(DynamicInfo);
+	DynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	DynamicInfo.dynamicStateCount = 2;
+	DynamicInfo.pDynamicStates = Dynamic;
+}
+
 void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, VkRenderPass RenderPass)
 {
 	std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
@@ -313,110 +412,15 @@ void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFo
 
 	VkPipelineVertexInputStateCreateInfo VIInfo = VertexFormat->GetCreateInfo();
 
-	VkPipelineInputAssemblyStateCreateInfo IAInfo;
-	MemZero(IAInfo);
-	IAInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	IAInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	//IAInfo.primitiveRestartEnable = VK_FALSE;
-
-	VkViewport Viewport;
-	MemZero(Viewport);
 	//Viewport.x = 0;
 	//Viewport.y = 0;
 	Viewport.width = (float)Width;
 	Viewport.height = (float)Height;
 	//Viewport.minDepth = 0;
-	Viewport.maxDepth = 1;
+	//Viewport.maxDepth = 1;
 
-	VkRect2D Scissor;
-	MemZero(Scissor);
 	//scissors.offset = { 0, 0 };
 	Scissor.extent = { Width, Height };
-
-	VkPipelineViewportStateCreateInfo ViewportInfo;
-	MemZero(ViewportInfo);
-	ViewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	ViewportInfo.viewportCount = 1;
-	ViewportInfo.pViewports = &Viewport;
-	ViewportInfo.scissorCount = 1;
-	ViewportInfo.pScissors = &Scissor;
-
-	VkPipelineRasterizationStateCreateInfo RSInfo;
-	MemZero(RSInfo);
-	RSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	//RSInfo.depthClampEnable = VK_FALSE;
-	//RSInfo.rasterizerDiscardEnable = VK_FALSE;
-	RSInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	RSInfo.cullMode = VK_CULL_MODE_NONE;
-	RSInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-	//RSInfo.depthBiasEnable = VK_FALSE;
-	//RSInfo.depthBiasConstantFactor = 0;
-	//RSInfo.depthBiasClamp = 0;
-	//RSInfo.depthBiasSlopeFactor = 0;
-	RSInfo.lineWidth = 1;
-
-	VkPipelineMultisampleStateCreateInfo MSInfo;
-	MemZero(MSInfo);
-	MSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	MSInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-	//MSInfo.sampleShadingEnable = VK_FALSE;
-	//MSInfo.minSampleShading = 0;
-	//MSInfo.pSampleMask = NULL;
-	//MSInfo.alphaToCoverageEnable = VK_FALSE;
-	//MSInfo.alphaToOneEnable = VK_FALSE;
-
-	VkStencilOpState Stencil;
-	MemZero(Stencil);
-	Stencil.failOp = VK_STENCIL_OP_KEEP;
-	Stencil.passOp = VK_STENCIL_OP_KEEP;
-	Stencil.depthFailOp = VK_STENCIL_OP_KEEP;
-	Stencil.compareOp = VK_COMPARE_OP_ALWAYS;
-	//Stencil.compareMask = 0;
-	//Stencil.writeMask = 0;
-	//Stencil.reference = 0;
-
-	VkPipelineDepthStencilStateCreateInfo DSInfo;
-	MemZero(DSInfo);
-	DSInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	DSInfo.depthTestEnable = VK_TRUE;
-	DSInfo.depthWriteEnable = VK_TRUE;
-	DSInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-	//DSInfo.depthBoundsTestEnable = VK_FALSE;
-	//DSInfo.stencilTestEnable = VK_FALSE;
-	DSInfo.front = Stencil;
-	DSInfo.back = Stencil;
-	//DSInfo.minDepthBounds = 0;
-	//DSInfo.maxDepthBounds = 0;
-
-	VkPipelineColorBlendAttachmentState AttachState;
-	MemZero(AttachState);
-	//AtachState.blendEnable = VK_FALSE;
-	AttachState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
-	AttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
-	AttachState.colorBlendOp = VK_BLEND_OP_ADD;
-	AttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-	AttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-	AttachState.alphaBlendOp = VK_BLEND_OP_ADD;
-	AttachState.colorWriteMask = 0xf;
-
-	VkPipelineColorBlendStateCreateInfo CBInfo;
-	MemZero(CBInfo);
-	CBInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	//CBInfo.logicOpEnable = VK_FALSE;
-	CBInfo.logicOp = VK_LOGIC_OP_CLEAR;
-	CBInfo.attachmentCount = 1;
-	CBInfo.pAttachments = &AttachState;
-	//CBInfo.blendConstants[0] = 0.0;
-	//CBInfo.blendConstants[1] = 0.0;
-	//CBInfo.blendConstants[2] = 0.0;
-	//CBInfo.blendConstants[3] = 0.0;
-
-	VkDynamicState Dynamic[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-	VkPipelineDynamicStateCreateInfo DynamicInfo;
-	MemZero(DynamicInfo);
-	DynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	DynamicInfo.dynamicStateCount = 2;
-	DynamicInfo.pDynamicStates = Dynamic;
 
 	VkGraphicsPipelineCreateInfo PipelineInfo;
 	MemZero(PipelineInfo);

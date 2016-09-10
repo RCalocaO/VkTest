@@ -695,6 +695,20 @@ struct FRenderPass
 
 struct FGfxPipeline : public FBasePipeline
 {
+	VkPipelineInputAssemblyStateCreateInfo IAInfo;
+	VkViewport Viewport;
+	VkRect2D Scissor;
+	VkPipelineViewportStateCreateInfo ViewportInfo;
+	VkPipelineRasterizationStateCreateInfo RSInfo;
+	VkPipelineMultisampleStateCreateInfo MSInfo;
+	VkStencilOpState Stencil;
+	VkPipelineDepthStencilStateCreateInfo DSInfo;
+	VkPipelineColorBlendAttachmentState AttachState;
+	VkPipelineColorBlendStateCreateInfo CBInfo;
+	VkDynamicState Dynamic[2];
+	VkPipelineDynamicStateCreateInfo DynamicInfo;
+
+	FGfxPipeline();
 	void Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, VkRenderPass RenderPass);	
 };
 
