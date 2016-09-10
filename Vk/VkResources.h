@@ -684,74 +684,7 @@ struct FRenderPass
 	VkDevice Device = VK_NULL_HANDLE;
 	FRenderPassLayout Layout;
 
-	void Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
-	{
-		Device = InDevice;
-		Layout = InLayout;
-
-		VkAttachmentDescription AttachmentDesc[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
-		VkAttachmentReference AttachmentRef[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
-		MemZero(AttachmentDesc);
-		MemZero(AttachmentRef);
-
-		VkAttachmentDescription* CurrentDesc = AttachmentDesc;
-		VkAttachmentReference* CurrentRef = AttachmentRef;
-		uint32 Index = 0;
-		for (Index = 0; Index < Layout.NumColorTargets; ++Index)
-		{
-			CurrentDesc->format = Layout.ColorFormats[Index];
-			CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
-			CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-			CurrentRef->attachment = Index;
-			CurrentRef->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-			++CurrentDesc;
-			++CurrentRef;
-		}
-
-		VkAttachmentReference* DepthRef = nullptr;
-		if (Layout.DepthStencilFormat != VK_FORMAT_UNDEFINED)
-		{
-			CurrentDesc->format = Layout.DepthStencilFormat;
-			CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
-			CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			++CurrentDesc;
-
-			DepthRef = CurrentRef;
-			CurrentRef->attachment = Index;
-			CurrentRef->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			++CurrentRef;
-		}
-
-
-		VkSubpassDescription Subpass;
-		MemZero(Subpass);
-		Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		Subpass.colorAttachmentCount = Index;
-		Subpass.pColorAttachments = &AttachmentRef[0];
-		Subpass.pDepthStencilAttachment = DepthRef;
-
-		VkRenderPassCreateInfo RenderPassInfo;
-		MemZero(RenderPassInfo);
-		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		RenderPassInfo.attachmentCount = CurrentDesc - AttachmentDesc;
-		RenderPassInfo.pAttachments = AttachmentDesc;
-		RenderPassInfo.subpassCount = 1;
-		RenderPassInfo.pSubpasses = &Subpass;
-
-		checkVk(vkCreateRenderPass(Device, &RenderPassInfo, nullptr, &RenderPass));
-	}
+	void Create(VkDevice InDevice, const FRenderPassLayout& InLayout);
 
 	void Destroy()
 	{
@@ -760,6 +693,37 @@ struct FRenderPass
 	}
 };
 
+struct FGfxPipeline : public FBasePipeline
+{
+	void Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, VkRenderPass RenderPass);	
+};
+
+struct FComputePipeline : public FBasePipeline
+{
+	void Create(VkDevice Device, FComputePSO* PSO)
+	{
+		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
+		PSO->SetupShaderStages(ShaderStages);
+		check(ShaderStages.size() == 1);
+
+		VkPipelineLayoutCreateInfo CreateInfo;
+		MemZero(CreateInfo);
+		CreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		CreateInfo.setLayoutCount = 1;
+		CreateInfo.pSetLayouts = &PSO->DSLayout;
+		checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
+
+		VkComputePipelineCreateInfo PipelineInfo;
+		MemZero(PipelineInfo);
+		PipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		//VkPipelineCreateFlags              flags;
+		PipelineInfo.stage = ShaderStages[0];
+		PipelineInfo.layout = PipelineLayout;
+		//VkPipeline                         basePipelineHandle;
+		//int32_t                            basePipelineIndex;
+		checkVk(vkCreateComputePipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
+	}
+};
 
 class FWriteDescriptors
 {
