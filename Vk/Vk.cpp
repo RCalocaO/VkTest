@@ -19,6 +19,7 @@ static FStagingManager GStagingManager;
 static FBuffer GObjVB;
 static Obj::FObj GObj;
 static FBuffer GFloorVB;
+static FBuffer GFloorIB;
 
 struct FViewUB
 {
@@ -444,7 +445,7 @@ void CreateAndFillTexture()
 static void SetupFloor()
 {
 	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-	auto FillTri = [](void* Data)
+	auto FillVertices = [](void* Data)
 	{
 		check(Data);
 		auto* Vertex = (FPosColorUVVertex*)Data;
@@ -455,7 +456,19 @@ static void SetupFloor()
 		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
 		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
 	};
-	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB, FillTri, sizeof(FPosColorUVVertex) * 4);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB, FillVertices, sizeof(FPosColorUVVertex) * 4);
+
+	GFloorIB.Create(GDevice.Device, sizeof(uint32) * 6, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	auto FillIndices = [](void* Data)
+	{
+		check(Data);
+		auto* Index = (uint32*)Data;
+		Index[0] = 0;
+		Index[1] = 1;
+		Index[2] = 2;
+		Index[3] = 3;
+	};
+	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorIB, FillIndices, sizeof(uint32) * 4);
 }
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
@@ -573,7 +586,8 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 	VkDeviceSize Offset = 0;
 	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GFloorVB.Buffer, &Offset);
-	vkCmdDraw(CmdBuffer->CmdBuffer, 4, 1, 0, 0);
+	vkCmdBindIndexBuffer(CmdBuffer->CmdBuffer, GFloorIB.Buffer, GFloorIB.GetBindOffset(), VK_INDEX_TYPE_UINT32);
+	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, 4, 1, 0, 0, 0);
 }
 
 static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Height)
@@ -683,6 +697,7 @@ void DoDeinit()
 
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
 
+	GFloorIB.Destroy(GDevice.Device);
 	GFloorVB.Destroy(GDevice.Device);
 	GViewUB.Destroy(GDevice.Device);
 	GObjUB.Destroy(GDevice.Device);
