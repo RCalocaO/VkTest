@@ -76,58 +76,7 @@ struct FInstance
 		int32_t MessageCode,
 		const char* LayerPrefix,
 		const char* Message,
-		void* UserData)
-	{
-		int n = 0;
-		if (Flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
-		{
-			char s[2048];
-			sprintf_s(s, "<VK>Error: %s\n", Message);
-			::OutputDebugStringA(s);
-			check(0);
-			++n;
-		}
-		else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
-		{
-			char s[2048];
-			sprintf_s(s, "<VK>Warn: %s\n", Message);
-			::OutputDebugStringA(s);
-			++n;
-		}
-		else if (Flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT)
-		{
-			char s[2048];
-			sprintf_s(s, "<VK>Perf: %s\n", Message);
-			::OutputDebugStringA(s);
-			++n;
-		}
-		else if (1)
-		{
-			static const char* SkipPrefixes[] =
-			{
-				"ObjectTracker",
-				"OBJTRACK",
-				"loader",
-				"MEM",
-				"DS",
-			};
-			for (uint32 Index = 0; Index < ARRAYSIZE(SkipPrefixes); ++Index)
-			{
-				if (!strcmp(LayerPrefix, SkipPrefixes[Index]))
-				{
-					return false;
-				}
-			}
-
-			uint32 Size = strlen(Message) + 100;
-			auto* s = new char[Size];
-			snprintf(s, Size - 1, "<VK>: %s\n", Message);
-			::OutputDebugStringA(s);
-			delete[] s;
-		}
-
-		return false;
-	}
+		void* UserData);
 
 	void CreateDebugCallback()
 	{
