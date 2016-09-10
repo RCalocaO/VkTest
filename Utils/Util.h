@@ -209,3 +209,15 @@ inline uint32 PackNormalToU32(const FVector3& V)
 	Out |= ((uint32)((V.z + 1.0f) * 127.5f) & 0xff) << 16;
 	return Out;
 };
+
+inline FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, float NearZ, float FarZ)
+{
+	const float HalfTanFOV = (float)tan(FOVRadians / 2.0);
+	FMatrix4x4 New = FMatrix4x4::GetZero();
+	New.Set(0, 0, 1.0f / (Aspect * HalfTanFOV));
+	New.Set(1, 1, 1.0f / HalfTanFOV);
+	New.Set(2, 3, -1);
+	New.Set(2, 2, FarZ / (NearZ - FarZ));
+	New.Set(3, 2, -(FarZ * NearZ) / (FarZ - NearZ));
+	return New;
+}

@@ -53,19 +53,6 @@ FVertexFormat GPosColorUVFormat;
 
 bool GQuitting = false;
 
-FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, float NearZ, float FarZ)
-{
-	const float HalfTanFOV = (float)tan(FOVRadians / 2.0);
-	FMatrix4x4 New = FMatrix4x4::GetZero();
-	New.Set(0, 0, 1.0f / (Aspect * HalfTanFOV));
-	New.Set(1, 1, 1.0f / HalfTanFOV);
-	New.Set(2, 3, -1);
-	New.Set(2, 2, FarZ / (NearZ - FarZ));
-	New.Set(3, 2, -(FarZ * NearZ) / (FarZ - NearZ));
-	return New;
-}
-
-
 struct FTestPSO : public FGfxPSO
 {
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
@@ -146,98 +133,6 @@ void FInstance::CreateDevice(FDevice& OutDevice)
 
 Found:
 	OutDevice.Create(Layers);
-}
-
-
-
-FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, bool bInMapped)
-	: Allocation(InDevice, Size, MemTypeIndex, bInMapped)
-	, MemTypeIndex(InMemTypeIndex)
-{
-	FRange Block;
-	Block.Begin = 0;
-	Block.End = Size;
-	FreeList.push_back(Block);
-}
-
-FMemPage::~FMemPage()
-{
-	check(FreeList.size() == 1);
-	check(SubAllocations.empty());
-	Allocation.Destroy();
-}
-
-FMemSubAlloc* FMemPage::TryAlloc(uint64 Size, uint64 Alignment)
-{
-	for (auto& Range : FreeList)
-	{
-		uint64 AlignedOffset = Align(Range.Begin, Alignment);
-		if (AlignedOffset + Size <= Range.End)
-		{
-			auto* SubAlloc = new FMemSubAlloc(Range.Begin, AlignedOffset, Size, this);
-			SubAllocations.push_back(SubAlloc);
-			Range.Begin = AlignedOffset + Size;
-			return SubAlloc;
-		}
-	}
-
-	return nullptr;
-}
-
-void FMemPage::Release(FMemSubAlloc* SubAlloc)
-{
-	FRange NewRange;
-	NewRange.Begin = SubAlloc->AllocatedOffset;
-	NewRange.End = SubAlloc->AllocatedOffset + SubAlloc->Size;
-	FreeList.push_back(NewRange);
-	SubAllocations.remove(SubAlloc);
-	delete SubAlloc;
-
-	{
-		std::sort(FreeList.begin(), FreeList.end(),
-			[](const FRange& Left, const FRange& Right)
-		{
-			return Left.Begin < Right.Begin;
-		});
-
-		for (uint32 Index = FreeList.size() - 1; Index > 0; --Index)
-		{
-			auto& Current = FreeList[Index];
-			auto& Prev = FreeList[Index - 1];
-			if (Current.Begin == Prev.End)
-			{
-				Prev.End = Current.End;
-				for (uint32 SubIndex = Index; SubIndex < FreeList.size() - 1; ++SubIndex)
-				{
-					FreeList[SubIndex] = FreeList[SubIndex + 1];
-				}
-				FreeList.resize(FreeList.size() - 1);
-			}
-		}
-	}
-}
-
-
-void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer)
-{
-	check(State == EState::Begun);
-
-	static uint32 N = 0;
-	N = (N + 1) % 256;
-
-	VkClearValue ClearValues[2] = { { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
-	ClearValues[1].depthStencil.depth = 1.0f;
-	ClearValues[1].depthStencil.stencil = 0;
-	VkRenderPassBeginInfo BeginInfo = {};
-	BeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	BeginInfo.renderPass = RenderPass;
-	BeginInfo.framebuffer = Framebuffer.Framebuffer;
-	BeginInfo.renderArea = { 0, 0, Framebuffer.Width, Framebuffer.Height };
-	BeginInfo.clearValueCount = 2;
-	BeginInfo.pClearValues = ClearValues;
-	vkCmdBeginRenderPass(CmdBuffer, &BeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	State = EState::InsideRenderPass;
 }
 
 struct FObjectCache
