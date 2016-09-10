@@ -19,7 +19,7 @@ static FStagingManager GStagingManager;
 static FBuffer GObjVB;
 static Obj::FObj GObj;
 static FBuffer GFloorVB;
-static FBuffer GFloorIB;
+static FIndexBuffer GFloorIB;
 
 struct FViewUB
 {
@@ -458,7 +458,7 @@ static void SetupFloor()
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB, FillVertices, sizeof(FPosColorUVVertex) * 4);
 
-	GFloorIB.Create(GDevice.Device, sizeof(uint32) * 6, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr);
 	auto FillIndices = [](void* Data)
 	{
 		check(Data);
@@ -468,7 +468,7 @@ static void SetupFloor()
 		Index[2] = 2;
 		Index[3] = 3;
 	};
-	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorIB, FillIndices, sizeof(uint32) * 4);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorIB.Buffer, FillIndices, sizeof(uint32) * 4);
 }
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
@@ -586,7 +586,7 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 	VkDeviceSize Offset = 0;
 	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GFloorVB.Buffer, &Offset);
-	vkCmdBindIndexBuffer(CmdBuffer->CmdBuffer, GFloorIB.Buffer, GFloorIB.GetBindOffset(), VK_INDEX_TYPE_UINT32);
+	GFloorIB.Bind(CmdBuffer->CmdBuffer);
 	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, 4, 1, 0, 0, 0);
 }
 
@@ -697,12 +697,12 @@ void DoDeinit()
 
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
 
-	GFloorIB.Destroy(GDevice.Device);
-	GFloorVB.Destroy(GDevice.Device);
-	GViewUB.Destroy(GDevice.Device);
-	GObjUB.Destroy(GDevice.Device);
-	GObjVB.Destroy(GDevice.Device);
-	GIdentityUB.Destroy(GDevice.Device);
+	GFloorIB.Destroy();
+	GFloorVB.Destroy();
+	GViewUB.Destroy();
+	GObjUB.Destroy();
+	GObjVB.Destroy();
+	GIdentityUB.Destroy();
 
 	GSceneColorAfterPost.Destroy();
 	GSampler.Destroy();

@@ -26,10 +26,11 @@ struct FBuffer
 		vkBindBufferMemory(Device, Buffer, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
 
-	void Destroy(VkDevice Device)
+	void Destroy()
 	{
 		vkDestroyBuffer(Device, Buffer, nullptr);
 		Buffer = VK_NULL_HANDLE;
+		Device = VK_NULL_HANDLE;
 
 		SubAlloc->Release();
 	}
@@ -56,6 +57,32 @@ struct FBuffer
 	FMemSubAlloc* SubAlloc = nullptr;
 };
 
+
+struct FIndexBuffer
+{
+	void Create(VkDevice InDevice, uint64 InNumIndices, VkIndexType InIndexType, FMemManager* MemMgr,
+		VkBufferUsageFlags UsageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+	{
+		check(InIndexType == VK_INDEX_TYPE_UINT16 || InIndexType == VK_INDEX_TYPE_UINT32);
+		IndexType = InIndexType;
+		uint32 IndexSize = InIndexType == VK_INDEX_TYPE_UINT16 ? 2 : 4;
+		Buffer.Create(InDevice, InNumIndices * IndexSize, UsageFlags, MemPropertyFlags, MemMgr);
+	}
+
+	inline void Bind(VkCommandBuffer CmdBuffer)
+	{
+		vkCmdBindIndexBuffer(CmdBuffer, Buffer.Buffer, Buffer.GetBindOffset(), IndexType);
+	}
+
+	void Destroy()
+	{
+		Buffer.Destroy();
+	}
+
+	FBuffer Buffer;
+	VkIndexType IndexType = VK_INDEX_TYPE_UINT32;
+};
 
 struct FImage
 {
@@ -186,7 +213,7 @@ struct FStagingManager
 		for (auto& Entry : Entries)
 		{
 			check(Entry.bFree);
-			Entry.Buffer->Destroy(Device);
+			Entry.Buffer->Destroy();
 			delete Entry.Buffer;
 		}
 	}
