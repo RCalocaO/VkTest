@@ -18,7 +18,7 @@ static FStagingManager GStagingManager;
 
 static FBuffer GObjVB;
 static Obj::FObj GObj;
-static FBuffer GQuadVB;
+static FBuffer GFloorVB;
 
 struct FViewUB
 {
@@ -441,6 +441,23 @@ void CreateAndFillTexture()
 	CmdBuffer->WaitForFence();
 }
 
+static void SetupFloor()
+{
+	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	auto FillTri = [](void* Data)
+	{
+		check(Data);
+		auto* Vertex = (FPosColorUVVertex*)Data;
+		float Y = 10;
+		float Extent = 250;
+		Vertex[0].x = -Extent; Vertex[0].y = Y; Vertex[0].z = -Extent; Vertex[0].Color = 0xffff0000; Vertex[0].u = 0; Vertex[0].v = 0;
+		Vertex[1].x = Extent; Vertex[1].y = Y; Vertex[1].z = -Extent; Vertex[1].Color = 0xff00ff00; Vertex[1].u = 1; Vertex[1].v = 0;
+		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
+		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
+	};
+	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB, FillTri, sizeof(FPosColorUVVertex) * 4);
+}
+
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 {
 	LPSTR CmdLine = ::GetCommandLineA();
@@ -476,20 +493,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		return false;
 	}
 
-	GQuadVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-	auto FillTri = [](void* Data)
-	{
-		check(Data);
-		auto* Vertex = (FPosColorUVVertex*)Data;
-		float Y = 10;
-		float Extent = 250;
-		Vertex[0].x = -Extent; Vertex[0].y = Y; Vertex[0].z = -Extent; Vertex[0].Color = 0xffff0000; Vertex[0].u = 0; Vertex[0].v = 0;
-		Vertex[1].x = Extent; Vertex[1].y = Y; Vertex[1].z = -Extent; Vertex[1].Color = 0xff00ff00; Vertex[1].u = 1; Vertex[1].v = 0;
-		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
-		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
-	};
-	MapAndFillBufferSyncOneShotCmdBuffer(&GQuadVB, FillTri, sizeof(FPosColorUVVertex) * 4);
-
 	GViewUB.Create(GDevice.Device, sizeof(FViewUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	GObjUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
 	GIdentityUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
@@ -510,6 +513,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	}
 
 	CreateAndFillTexture();
+	SetupFloor();
 
 	GSceneColorAfterPost.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GSampler.Create(GDevice.Device);
@@ -568,7 +572,7 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 
 	VkDeviceSize Offset = 0;
-	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GQuadVB.Buffer, &Offset);
+	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GFloorVB.Buffer, &Offset);
 	vkCmdDraw(CmdBuffer->CmdBuffer, 4, 1, 0, 0);
 }
 
@@ -679,7 +683,7 @@ void DoDeinit()
 
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
 
-	GQuadVB.Destroy(GDevice.Device);
+	GFloorVB.Destroy(GDevice.Device);
 	GViewUB.Destroy(GDevice.Device);
 	GObjUB.Destroy(GDevice.Device);
 	GObjVB.Destroy(GDevice.Device);
