@@ -152,6 +152,90 @@ struct FImageView
 	}
 };
 
+struct FStagingBuffer : public FBuffer
+{
+	FCmdBuffer* CmdBuffer = nullptr;
+	uint64 FenceCounter = 0;
+
+	void SetFence(FCmdBuffer* InCmdBuffer)
+	{
+		CmdBuffer = InCmdBuffer;
+		FenceCounter = InCmdBuffer->Fence.FenceSignaledCounter;
+	}
+
+	bool IsSignaled() const
+	{
+		return FenceCounter < CmdBuffer->Fence.FenceSignaledCounter;
+	}
+};
+
+
+struct FStagingManager
+{
+	VkDevice Device = VK_NULL_HANDLE;
+	FMemManager* MemMgr = nullptr;
+	void Create(VkDevice InDevice, FMemManager* InMemMgr)
+	{
+		Device = InDevice;
+		MemMgr = InMemMgr;
+	}
+
+	void Destroy()
+	{
+		Update();
+		for (auto& Entry : Entries)
+		{
+			check(Entry.bFree);
+			Entry.Buffer->Destroy(Device);
+			delete Entry.Buffer;
+		}
+	}
+
+	FStagingBuffer* RequestUploadBuffer(uint32 Size)
+	{
+/*
+		for (auto& Entry : Entries)
+		{
+			if (Entry.bFree && Entry.Buffer->Size == Size)
+			{
+				Entry.bFree = false;
+				Entry.Buffer->CmdBuffer = nullptr;
+				Entry.Buffer->FenceCounter = 0;
+				return Entry.Buffer;
+			}
+		}
+*/
+		auto* Buffer = new FStagingBuffer;
+		Buffer->Create(Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, MemMgr);
+		FEntry Entry;
+		Entry.Buffer = Buffer;
+		Entry.bFree = false;
+		Entries.push_back(Entry);
+		return Buffer;
+	}
+
+	void Update()
+	{
+		for (auto& Entry : Entries)
+		{
+			if (!Entry.bFree)
+			{
+				if (Entry.Buffer->IsSignaled())
+				{
+					Entry.bFree = true;
+				}
+			}
+		}
+	}
+
+	struct FEntry
+	{
+		FStagingBuffer* Buffer = nullptr;
+		bool bFree = false;
+	};
+	std::vector<FEntry> Entries;
+};
+
 inline bool IsDepthOrStencilFormat(VkFormat Format)
 {
 	switch (Format)
