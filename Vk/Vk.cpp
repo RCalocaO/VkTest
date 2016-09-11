@@ -99,6 +99,7 @@ struct FSetupFloorPSO : public FComputePSO
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	}
 };
 static FSetupFloorPSO GSetupFloorPSO;
@@ -460,7 +461,8 @@ void CreateAndFillTexture()
 
 static void SetupFloor()
 {
-	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, &GMemMgr);
+	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+/*
 	auto FillVertices = [](void* Data)
 	{
 		check(Data);
@@ -473,13 +475,15 @@ static void SetupFloor()
 		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
+*/
 
 	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	{
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		{
-			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorIB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
+			//BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorVB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
+			//BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorIB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
 			auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GSetupFloorPSO);
 			vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
@@ -488,12 +492,14 @@ static void SetupFloor()
 
 				FWriteDescriptors WriteDescriptors;
 				WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
+				WriteDescriptors.AddStorageBuffer(DescriptorSet, 1, GFloorVB.Buffer);
 				vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 				vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 			}
 
 			vkCmdDispatch(CmdBuffer->CmdBuffer, GFloorIB.NumIndices / 4, 1, 1);
 			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorIB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
+			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorVB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
 		}
 		CmdBuffer->End();
 		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);

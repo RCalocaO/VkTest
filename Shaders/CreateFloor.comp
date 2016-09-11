@@ -11,14 +11,33 @@ layout (set = 0, binding = 0) buffer IB
 	int OutIndices[];
 };
 
+struct FPosColorUVVertex
+{
+	float x, y, z;
+	uint Color;
+	float u, v;
+};
+
+layout (set = 0, binding = 1) buffer VB
+{
+	FPosColorUVVertex OutVertices[];
+};
+
 void main()
 {
-	//ivec2 Size = imageSize(RWImage);
 	int Out = int(gl_GlobalInvocationID.x);
-	//imageStore(RWImage, Out, vec4(gl_GlobalInvocationID.x, 0.0, 0.0, 0.0));//(float)gl_GlobalInvocationID.x);
 	OutIndices[Out] = Out;
-	//Vertex[0].x = -Extent; Vertex[0].y = Y; Vertex[0].z = -Extent; Vertex[0].Color = 0xffff0000; Vertex[0].u = 0; Vertex[0].v = 0;
-	//Vertex[1].x = Extent; Vertex[1].y = Y; Vertex[1].z = -Extent; Vertex[1].Color = 0xff00ff00; Vertex[1].u = 1; Vertex[1].v = 0;
-	//Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
-	//Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
+
+	float Y = 10;
+	float Extent = 250;
+
+	bool b03 = (gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x == 3);
+	bool b01 = (gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x == 1);
+
+	OutVertices[Out].x = b03 ? -Extent : Extent;
+	OutVertices[Out].y = Y;
+	OutVertices[Out].z = b01 ? -Extent : Extent;
+	OutVertices[Out].Color = uint(-1);
+	OutVertices[Out].u = b03 ? 0 : 1;
+	OutVertices[Out].v = b01 ? 0 : 1;
 }
