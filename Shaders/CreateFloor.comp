@@ -23,13 +23,19 @@ layout (set = 0, binding = 1) buffer VB
 	FPosColorUVVertex OutVertices[];
 };
 
+layout (set = 0, binding = 2) uniform UB
+{
+	float Y;
+	float Extent;
+};
+
 void main()
 {
 	int Out = int(gl_GlobalInvocationID.x);
 	OutIndices[Out] = Out;
 
-	float Y = 10;
-	float Extent = 250;
+	//float Y = 10;
+	//float Extent = 250;
 
 	bool b03 = (gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x == 3);
 	bool b01 = (gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x == 1);

@@ -20,6 +20,12 @@ static FVertexBuffer GObjVB;
 static Obj::FObj GObj;
 static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
+struct FCreateFloorUB
+{
+	float Y;
+	float Extent;
+};
+FBuffer GCreateFloorUB;
 
 struct FViewUB
 {
@@ -100,6 +106,7 @@ struct FSetupFloorPSO : public FComputePSO
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+		AddBinding(OutBindings, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	}
 };
 static FSetupFloorPSO GSetupFloorPSO;
@@ -476,6 +483,12 @@ static void SetupFloor()
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 */
+	GCreateFloorUB.Create(GDevice.Device, sizeof(FCreateFloorUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	{
+		FCreateFloorUB& CreateFloorUB = *(FCreateFloorUB*)GCreateFloorUB.GetMappedData();
+		CreateFloorUB.Y = 10;
+		CreateFloorUB.Extent = 250;
+	}
 
 	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	{
@@ -493,6 +506,7 @@ static void SetupFloor()
 				FWriteDescriptors WriteDescriptors;
 				WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
 				WriteDescriptors.AddStorageBuffer(DescriptorSet, 1, GFloorVB.Buffer);
+				WriteDescriptors.AddUniformBuffer(DescriptorSet, 2, GCreateFloorUB);
 				vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 				vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 			}
@@ -745,6 +759,7 @@ void DoDeinit()
 	GFloorIB.Destroy();
 	GFloorVB.Destroy();
 	GViewUB.Destroy();
+	GCreateFloorUB.Destroy();
 	GObjUB.Destroy();
 	GObjVB.Destroy();
 	GIdentityUB.Destroy();
