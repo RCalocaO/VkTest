@@ -474,7 +474,7 @@ static void SetupFloor()
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 
-	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	{
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();

@@ -176,6 +176,7 @@
     <Image Include="Test0.ico" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\Shaders\CreateFloor.comp" />
     <None Include="..\Shaders\FillTexture.comp" />
     <None Include="..\Shaders\Test0.comp" />
     <None Include="..\Shaders\Test0.frag" />

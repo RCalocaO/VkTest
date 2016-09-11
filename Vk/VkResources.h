@@ -61,9 +61,10 @@ struct FBuffer
 struct FIndexBuffer
 {
 	void Create(VkDevice InDevice, uint32 InNumIndices, VkIndexType InIndexType, FMemManager* MemMgr,
-		VkBufferUsageFlags UsageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VkBufferUsageFlags InUsageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 	{
+		VkBufferUsageFlags UsageFlags = InUsageFlags | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 		check(InIndexType == VK_INDEX_TYPE_UINT16 || InIndexType == VK_INDEX_TYPE_UINT32);
 		IndexType = InIndexType;
 		NumIndices = InNumIndices;
@@ -89,9 +90,10 @@ inline void CmdBind(FCmdBuffer* CmdBuffer, FIndexBuffer* IB)
 struct FVertexBuffer
 {
 	void Create(VkDevice InDevice, uint64 Size, FMemManager* MemMgr,
-		VkBufferUsageFlags UsageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VkBufferUsageFlags InUsageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 	{
+		VkBufferUsageFlags UsageFlags = InUsageFlags | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 		Buffer.Create(InDevice, Size, UsageFlags, MemPropertyFlags, MemMgr);
 	}
 

@@ -82,5 +82,6 @@
     <None Include="..\Shaders\Test0.comp" />
     <None Include="..\Shaders\TestPost.comp" />
     <None Include="..\Shaders\FillTexture.comp" />
+    <None Include="..\Shaders\CreateFloor.comp" />
   </ItemGroup>
 </Project>
