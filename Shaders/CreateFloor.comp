@@ -3,7 +3,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shading_language_420pack : enable
 
-layout (local_size_x = 4, local_size_y = 1) in;
+layout (local_size_x = 1, local_size_y = 1) in;
 
 //layout (binding = 0, r32f) uniform writeonly image1D RWImage;
 layout (set = 0, binding = 0) buffer IB
@@ -32,18 +32,39 @@ layout (set = 0, binding = 2) uniform UB
 void main()
 {
 	int Out = int(gl_GlobalInvocationID.x);
-	OutIndices[Out] = Out;
 
-	//float Y = 10;
-	//float Extent = 250;
+	OutIndices[Out * 3 + 0] = Out * 4 + 0;
+	OutIndices[Out * 3 + 1] = Out * 4 + 1;
+	OutIndices[Out * 3 + 2] = Out * 4 + 3;
+	OutIndices[Out * 3 + 3] = Out * 4 + 1;
+	OutIndices[Out * 3 + 4] = Out * 4 + 2;
+	OutIndices[Out * 3 + 5] = Out * 4 + 3;
 
-	bool b03 = (gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x == 3);
-	bool b01 = (gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x == 1);
+	OutVertices[Out * 4 + 0].x = -Extent;
+	OutVertices[Out * 4 + 0].y = Y;
+	OutVertices[Out * 4 + 0].z = -Extent;
+	OutVertices[Out * 4 + 0].Color = uint(-1);
+	OutVertices[Out * 4 + 0].u = 0;
+	OutVertices[Out * 4 + 0].v = 0;
 
-	OutVertices[Out].x = b03 ? -Extent : Extent;
-	OutVertices[Out].y = Y;
-	OutVertices[Out].z = b01 ? -Extent : Extent;
-	OutVertices[Out].Color = uint(-1);
-	OutVertices[Out].u = b03 ? 0 : 1;
-	OutVertices[Out].v = b01 ? 0 : 1;
+	OutVertices[Out * 4 + 1].x = Extent;
+	OutVertices[Out * 4 + 1].y = Y;
+	OutVertices[Out * 4 + 1].z = -Extent;
+	OutVertices[Out * 4 + 1].Color = uint(-1);
+	OutVertices[Out * 4 + 1].u = 0;
+	OutVertices[Out * 4 + 1].v = 1;
+
+	OutVertices[Out * 4 + 2].x = Extent;
+	OutVertices[Out * 4 + 2].y = Y;
+	OutVertices[Out * 4 + 2].z = Extent;
+	OutVertices[Out * 4 + 2].Color = uint(-1);
+	OutVertices[Out * 4 + 2].u = 1;
+	OutVertices[Out * 4 + 2].v = 1;
+
+	OutVertices[Out * 4 + 3].x = -Extent;
+	OutVertices[Out * 4 + 3].y = Y;
+	OutVertices[Out * 4 + 3].z = Extent;
+	OutVertices[Out * 4 + 3].Color = uint(-1);
+	OutVertices[Out * 4 + 3].u = 1;
+	OutVertices[Out * 4 + 3].v = 0;
 }

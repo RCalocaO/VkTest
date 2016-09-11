@@ -490,7 +490,7 @@ static void SetupFloor()
 		CreateFloorUB.Extent = 250;
 	}
 
-	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	GFloorIB.Create(GDevice.Device, 6, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	{
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
@@ -511,7 +511,7 @@ static void SetupFloor()
 				vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 			}
 
-			vkCmdDispatch(CmdBuffer->CmdBuffer, GFloorIB.NumIndices / 4, 1, 1);
+			vkCmdDispatch(CmdBuffer->CmdBuffer, 1, 1, 1);
 			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorIB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
 			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorVB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
 		}
@@ -646,7 +646,7 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 	CmdBind(CmdBuffer, &GFloorVB);
 	CmdBind(CmdBuffer, &GFloorIB);
-	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, 4, 1, 0, 0, 0);
+	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, GFloorIB.NumIndices, 1, 0, 0, 0);
 }
 
 static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Height)
