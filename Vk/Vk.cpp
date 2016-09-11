@@ -16,9 +16,9 @@ static FDescriptorPool GDescriptorPool;
 static FStagingManager GStagingManager;
 
 
-static FBuffer GObjVB;
+static FVertexBuffer GObjVB;
 static Obj::FObj GObj;
-static FBuffer GFloorVB;
+static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
 
 struct FViewUB
@@ -362,7 +362,7 @@ static bool LoadShadersAndGeometry()
 		return false;
 	}
 	//GObj.Faces.resize(1);
-	GObjVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GObjVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3, &GMemMgr);
 
 	auto FillObj = [](void* Data)
 	{
@@ -384,7 +384,7 @@ static bool LoadShadersAndGeometry()
 		}
 	};
 
-	MapAndFillBufferSyncOneShotCmdBuffer(&GObjVB, FillObj, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GObjVB.Buffer, FillObj, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3);
 
 	return true;
 }
@@ -444,7 +444,7 @@ void CreateAndFillTexture()
 
 static void SetupFloor()
 {
-	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4, &GMemMgr);
 	auto FillVertices = [](void* Data)
 	{
 		check(Data);
@@ -456,7 +456,7 @@ static void SetupFloor()
 		Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
 		Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
 	};
-	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB, FillVertices, sizeof(FPosColorUVVertex) * 4);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 
 	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr);
 	auto FillIndices = [](void* Data)
@@ -567,8 +567,7 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 
 	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 
-	VkDeviceSize Offset = 0;
-	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GObjVB.Buffer, &Offset);
+	CmdBind(CmdBuffer, &GObjVB);
 	vkCmdDraw(CmdBuffer->CmdBuffer, GObj.Faces.size() * 3, 1, 0, 0);
 }
 
@@ -584,9 +583,8 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 
-	VkDeviceSize Offset = 0;
-	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &GFloorVB.Buffer, &Offset);
-	GFloorIB.Bind(CmdBuffer->CmdBuffer);
+	CmdBind(CmdBuffer, &GFloorVB);
+	CmdBind(CmdBuffer, &GFloorIB);
 	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, 4, 1, 0, 0, 0);
 }
 

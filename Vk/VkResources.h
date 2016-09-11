@@ -70,11 +70,6 @@ struct FIndexBuffer
 		Buffer.Create(InDevice, InNumIndices * IndexSize, UsageFlags, MemPropertyFlags, MemMgr);
 	}
 
-	inline void Bind(VkCommandBuffer CmdBuffer)
-	{
-		vkCmdBindIndexBuffer(CmdBuffer, Buffer.Buffer, Buffer.GetBindOffset(), IndexType);
-	}
-
 	void Destroy()
 	{
 		Buffer.Destroy();
@@ -83,6 +78,34 @@ struct FIndexBuffer
 	FBuffer Buffer;
 	VkIndexType IndexType = VK_INDEX_TYPE_UINT32;
 };
+
+inline void CmdBind(FCmdBuffer* CmdBuffer, FIndexBuffer* IB)
+{
+	vkCmdBindIndexBuffer(CmdBuffer->CmdBuffer, IB->Buffer.Buffer, IB->Buffer.GetBindOffset(), IB->IndexType);
+}
+
+struct FVertexBuffer
+{
+	void Create(VkDevice InDevice, uint64 Size, FMemManager* MemMgr,
+		VkBufferUsageFlags UsageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+	{
+		Buffer.Create(InDevice, Size, UsageFlags, MemPropertyFlags, MemMgr);
+	}
+
+	void Destroy()
+	{
+		Buffer.Destroy();
+	}
+
+	FBuffer Buffer;
+};
+
+inline void CmdBind(FCmdBuffer* CmdBuffer, FVertexBuffer* VB)
+{
+	VkDeviceSize Offset = 0;
+	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &VB->Buffer.Buffer, &Offset);
+}
 
 struct FImage
 {
