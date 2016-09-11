@@ -1,0 +1,24 @@
+#version 450
+
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_shading_language_420pack : enable
+
+layout (local_size_x = 4, local_size_y = 1) in;
+
+//layout (binding = 0, r32f) uniform writeonly image1D RWImage;
+layout (set = 0, binding = 0) buffer IB
+{
+	int OutIndices[];
+};
+
+void main()
+{
+	//ivec2 Size = imageSize(RWImage);
+	int Out = int(gl_GlobalInvocationID.x);
+	//imageStore(RWImage, Out, vec4(gl_GlobalInvocationID.x, 0.0, 0.0, 0.0));//(float)gl_GlobalInvocationID.x);
+	OutIndices[Out] = Out;
+	//Vertex[0].x = -Extent; Vertex[0].y = Y; Vertex[0].z = -Extent; Vertex[0].Color = 0xffff0000; Vertex[0].u = 0; Vertex[0].v = 0;
+	//Vertex[1].x = Extent; Vertex[1].y = Y; Vertex[1].z = -Extent; Vertex[1].Color = 0xff00ff00; Vertex[1].u = 1; Vertex[1].v = 0;
+	//Vertex[2].x = Extent; Vertex[2].y = Y; Vertex[2].z = Extent; Vertex[2].Color = 0xff0000ff; Vertex[2].u = 1; Vertex[2].v = 1;
+	//Vertex[3].x = -Extent; Vertex[3].y = Y; Vertex[3].z = Extent; Vertex[3].Color = 0xffff00ff; Vertex[3].u = 0; Vertex[3].v = 1;
+}

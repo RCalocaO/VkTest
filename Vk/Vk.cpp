@@ -67,7 +67,7 @@ FTestPSO GTestPSO;
 
 struct FOneImagePSO : public FComputePSO
 {
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
@@ -76,7 +76,7 @@ FOneImagePSO GFillTexturePSO;
 
 struct FTwoImagesPSO : public FComputePSO
 {
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
@@ -86,13 +86,22 @@ FTwoImagesPSO GTestComputePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 };
 FTestPostComputePSO GTestComputePostPSO;
+
+struct FSetupFloorPSO : public FComputePSO
+{
+	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
+	{
+		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	}
+};
+static FSetupFloorPSO GSetupFloorPSO;
 
 
 void FInstance::CreateDevice(FDevice& OutDevice)
@@ -337,10 +346,16 @@ static bool LoadShadersAndGeometry()
 			return false;
 		}
 
+		if (!DoCompile(" ../Shaders/CreateFloor.comp"))
+		{
+			return false;
+		}
+
 		check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
 		check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
 		check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
 		check(GFillTexturePSO.Create(GDevice.Device, "FillTexture.spv"));
+		check(GSetupFloorPSO.Create(GDevice.Device, "CreateFloor.spv"));
 	}
 	else
 	{
@@ -348,6 +363,7 @@ static bool LoadShadersAndGeometry()
 		check(GTestComputePSO.Create(GDevice.Device, "../Shaders/Test0.comp.spv"));
 		check(GTestComputePostPSO.Create(GDevice.Device, "../Shaders/TestPost.comp.spv"));
 		check(GFillTexturePSO.Create(GDevice.Device, "../Shaders/FillTexture.comp.spv"));
+		check(GSetupFloorPSO.Create(GDevice.Device, "../Shaders/CreateFloor.comp.spv"));
 	}
 
 	// Setup Vertex Format
@@ -458,7 +474,32 @@ static void SetupFloor()
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 
-	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr);
+	GFloorIB.Create(GDevice.Device, 4, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	{
+		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+		CmdBuffer->Begin();
+		{
+			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorIB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
+			auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GSetupFloorPSO);
+			vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
+
+			{
+				auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GSetupFloorPSO.DSLayout);
+
+				FWriteDescriptors WriteDescriptors;
+				WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
+				vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+				vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+			}
+
+			vkCmdDispatch(CmdBuffer->CmdBuffer, GFloorIB.NumIndices / 4, 1, 1);
+			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorIB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
+		}
+		CmdBuffer->End();
+		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		CmdBuffer->WaitForFence();
+	}
+/*
 	auto FillIndices = [](void* Data)
 	{
 		check(Data);
@@ -468,7 +509,7 @@ static void SetupFloor()
 		Index[2] = 2;
 		Index[3] = 3;
 	};
-	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorIB.Buffer, FillIndices, sizeof(uint32) * 4);
+	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorIB.Buffer, FillIndices, sizeof(uint32) * 4);*/
 }
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
@@ -715,6 +756,7 @@ void DoDeinit()
 	GTestComputePostPSO.Destroy(GDevice.Device);
 	GTestComputePSO.Destroy(GDevice.Device);
 	GTestPSO.Destroy(GDevice.Device);
+	GSetupFloorPSO.Destroy(GDevice.Device);
 	GFillTexturePSO.Destroy(GDevice.Device);
 
 	GSwapchain.Destroy();

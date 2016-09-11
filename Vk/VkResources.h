@@ -60,12 +60,13 @@ struct FBuffer
 
 struct FIndexBuffer
 {
-	void Create(VkDevice InDevice, uint64 InNumIndices, VkIndexType InIndexType, FMemManager* MemMgr,
+	void Create(VkDevice InDevice, uint32 InNumIndices, VkIndexType InIndexType, FMemManager* MemMgr,
 		VkBufferUsageFlags UsageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 	{
 		check(InIndexType == VK_INDEX_TYPE_UINT16 || InIndexType == VK_INDEX_TYPE_UINT32);
 		IndexType = InIndexType;
+		NumIndices = InNumIndices;
 		uint32 IndexSize = InIndexType == VK_INDEX_TYPE_UINT16 ? 2 : 4;
 		Buffer.Create(InDevice, InNumIndices * IndexSize, UsageFlags, MemPropertyFlags, MemMgr);
 	}
@@ -76,6 +77,7 @@ struct FIndexBuffer
 	}
 
 	FBuffer Buffer;
+	uint32 NumIndices = 0;
 	VkIndexType IndexType = VK_INDEX_TYPE_UINT32;
 };
 
@@ -680,6 +682,7 @@ struct FDescriptorPool
 		};
 
 		AddPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768);
+		AddPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16384);
 		AddPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768);
 		AddPool(VK_DESCRIPTOR_TYPE_SAMPLER, 32768);
 		AddPool(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 32768);
@@ -900,6 +903,26 @@ public:
 		DSWrites.push_back(DSWrite);
 	}
 
+	inline void AddStorageBuffer(VkDescriptorSet DescSet, uint32 Binding, const FBuffer& Buffer)
+	{
+		VkDescriptorBufferInfo* BufferInfo = new VkDescriptorBufferInfo;
+		MemZero(*BufferInfo);
+		BufferInfo->buffer = Buffer.Buffer;
+		BufferInfo->offset = Buffer.GetBindOffset();
+		BufferInfo->range = Buffer.GetSize();
+		BufferInfos.push_back(BufferInfo);
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescSet;
+		DSWrite.dstBinding = Binding;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		DSWrite.pBufferInfo = BufferInfo;
+		DSWrites.push_back(DSWrite);
+	}
+
 	inline void AddCombinedImageSampler(VkDescriptorSet DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView)
 	{
 		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
@@ -948,20 +971,40 @@ protected:
 
 inline void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
 {
-	VkImageMemoryBarrier TransferToPresentBarrier;
-	MemZero(TransferToPresentBarrier);
-	TransferToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	TransferToPresentBarrier.srcAccessMask = SrcMask;
-	TransferToPresentBarrier.dstAccessMask = DstMask;
-	TransferToPresentBarrier.oldLayout = SrcLayout;
-	TransferToPresentBarrier.newLayout = DestLayout;
-	TransferToPresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	TransferToPresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	TransferToPresentBarrier.image = Image;
-	TransferToPresentBarrier.subresourceRange.aspectMask = AspectMask;;
-	TransferToPresentBarrier.subresourceRange.layerCount = 1;
-	TransferToPresentBarrier.subresourceRange.levelCount = 1;
-	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 0, nullptr, 1, &TransferToPresentBarrier);
+	VkImageMemoryBarrier Barrier;
+	MemZero(Barrier);
+	Barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	Barrier.srcAccessMask = SrcMask;
+	Barrier.dstAccessMask = DstMask;
+	Barrier.oldLayout = SrcLayout;
+	Barrier.newLayout = DestLayout;
+	Barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	Barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	Barrier.image = Image;
+	Barrier.subresourceRange.aspectMask = AspectMask;;
+	Barrier.subresourceRange.layerCount = 1;
+	Barrier.subresourceRange.levelCount = 1;
+	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+}
+
+inline void BufferBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkBuffer Buffer, VkDeviceSize Offset, VkDeviceSize Size, VkAccessFlags SrcMask, VkAccessFlags DstMask)
+{
+	VkBufferMemoryBarrier Barrier;
+	MemZero(Barrier);
+	Barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	Barrier.srcAccessMask = SrcMask;
+	Barrier.dstAccessMask = DstMask;
+	Barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	Barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	Barrier.buffer = Buffer;
+	Barrier.offset = Offset;
+	Barrier.size = Size;
+	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 1, &Barrier, 0, nullptr);
+}
+
+inline void BufferBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, FBuffer* Buffer, VkAccessFlags SrcMask, VkAccessFlags DstMask)
+{
+	BufferBarrier(CmdBuffer, SrcStage, DestStage, Buffer->Buffer, Buffer->GetBindOffset(), Buffer->GetSize(), SrcMask, DstMask);
 }
 
 struct FSwapchain
