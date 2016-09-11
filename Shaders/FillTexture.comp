@@ -19,5 +19,6 @@ void main()
 	{
 		Color = vec4(0.0, 0.0, 0.0, 1.0);
 	}
+	//Color.xy = vec2(gl_GlobalInvocationID.xy) / vec2(imageSize(RWImage).xy);
 	imageStore(RWImage, ivec2(gl_GlobalInvocationID.xy), Color);
 }
