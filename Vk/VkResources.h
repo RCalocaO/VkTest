@@ -111,6 +111,30 @@ inline void CmdBind(FCmdBuffer* CmdBuffer, FVertexBuffer* VB)
 	vkCmdBindVertexBuffers(CmdBuffer->CmdBuffer, 0, 1, &VB->Buffer.Buffer, &Offset);
 }
 
+template <typename TStruct>
+struct FUniformBuffer
+{
+	void Create(VkDevice InDevice, FMemManager* MemMgr,
+		VkBufferUsageFlags InUsageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+	{
+		VkBufferUsageFlags UsageFlags = InUsageFlags | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		Buffer.Create(InDevice, sizeof(TStruct), UsageFlags, MemPropertyFlags, MemMgr);
+	}
+
+	TStruct* GetMappedData()
+	{
+		return (TStruct*)Buffer.GetMappedData();
+	}
+
+	void Destroy()
+	{
+		Buffer.Destroy();
+	}
+
+	FBuffer Buffer;
+};
+
 struct FImage
 {
 	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips)
@@ -903,6 +927,12 @@ public:
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		DSWrite.pBufferInfo = BufferInfo;
 		DSWrites.push_back(DSWrite);
+	}
+
+	template< typename TStruct>
+	inline void AddUniformBuffer(VkDescriptorSet DescSet, uint32 Binding, const FUniformBuffer<TStruct>& Buffer)
+	{
+		AddUniformBuffer(DescSet, Binding, Buffer.Buffer);
 	}
 
 	inline void AddStorageBuffer(VkDescriptorSet DescSet, uint32 Binding, const FBuffer& Buffer)

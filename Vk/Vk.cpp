@@ -25,21 +25,21 @@ struct FCreateFloorUB
 	float Y;
 	float Extent;
 };
-FBuffer GCreateFloorUB;
+static FUniformBuffer<FCreateFloorUB> GCreateFloorUB;
 
 struct FViewUB
 {
 	FMatrix4x4 View;
 	FMatrix4x4 Proj;
 };
-static FBuffer GViewUB;
+static FUniformBuffer<FViewUB> GViewUB;
 
 struct FObjUB
 {
 	FMatrix4x4 Obj;
 };
-static FBuffer GObjUB;
-static FBuffer GIdentityUB;
+static FUniformBuffer<FObjUB> GObjUB;
+static FUniformBuffer<FObjUB> GIdentityUB;
 
 static FImage2DWithView GCheckerboardTexture;
 static FImage2DWithView GSceneColor;
@@ -483,9 +483,9 @@ static void SetupFloor()
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 */
-	GCreateFloorUB.Create(GDevice.Device, sizeof(FCreateFloorUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	GCreateFloorUB.Create(GDevice.Device, &GMemMgr);
 	{
-		FCreateFloorUB& CreateFloorUB = *(FCreateFloorUB*)GCreateFloorUB.GetMappedData();
+		FCreateFloorUB& CreateFloorUB = *GCreateFloorUB.GetMappedData();
 		CreateFloorUB.Y = 10;
 		CreateFloorUB.Extent = 250;
 	}
@@ -567,22 +567,22 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		return false;
 	}
 
-	GViewUB.Create(GDevice.Device, sizeof(FViewUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
-	GObjUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
-	GIdentityUB.Create(GDevice.Device, sizeof(FObjUB), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &GMemMgr);
+	GViewUB.Create(GDevice.Device, &GMemMgr);
+	GObjUB.Create(GDevice.Device, &GMemMgr);
+	GIdentityUB.Create(GDevice.Device, &GMemMgr);
 
-	FViewUB& ViewUB = *(FViewUB*)GViewUB.GetMappedData();
+	FViewUB& ViewUB = *GViewUB.GetMappedData();
 	ViewUB.View = FMatrix4x4::GetIdentity();
 	ViewUB.View.Values[3 * 4 + 2] = -2;
 	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
 
 	{
-		FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
+		FObjUB& ObjUB = *GObjUB.GetMappedData();
 		ObjUB.Obj = FMatrix4x4::GetIdentity();
 	}
 
 	{
-		FObjUB& ObjUB = *(FObjUB*)GIdentityUB.GetMappedData();
+		FObjUB& ObjUB = *GIdentityUB.GetMappedData();
 		ObjUB.Obj = FMatrix4x4::GetIdentity();
 	}
 
@@ -610,7 +610,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	FObjUB& ObjUB = *(FObjUB*)GObjUB.GetMappedData();
+	FObjUB& ObjUB = *GObjUB.GetMappedData();
 	static float AngleDegrees = 0;
 	{
 		AngleDegrees += 360.0f / 10.0f / 60.0f;
