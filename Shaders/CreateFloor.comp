@@ -47,40 +47,46 @@ void main()
 		OutIndices[QuadIndex * 6 + 5] = QuadIndex * 4 + 3;
 
 		float Width = 2.0 * Extent;
-		float WidthPerQuad = Width / float(NumQuadsX);
-		float X0 = -Extent + WidthPerQuad * float(QuadIndex);
+		float WidthPerQuadX = Width / float(NumQuadsX);
+		float WidthPerQuadZ = Width;
+		float X0 = -Extent + WidthPerQuadX * float(QuadIndex);
 		float UWidth = 1.0 / float(NumQuadsX);
 		float U0 = UWidth * float(QuadIndex);
+		float VWidth = 1.0;
+		float V0 = 0.0;
+		float Z0 = -Extent;
 
-		float CurrentHeight = texture(Heightmap, vec2(U0, 0.0)).x;
-		float NextHeight = texture(Heightmap, vec2(U0 + UWidth, 0.0)).x;
+		float CurrentHeight = texture(Heightmap, vec2(U0, V0)).x;
+		float NextHeight = texture(Heightmap, vec2(U0 + UWidth, V0 + VWidth)).x;
+		float Y0 = Y + Elevation * CurrentHeight;
+		float Y1 = Y + Elevation * NextHeight;
 
 		OutVertices[QuadIndex * 4 + 0].x = X0;
-		OutVertices[QuadIndex * 4 + 0].y = Y + CurrentHeight * Elevation;
-		OutVertices[QuadIndex * 4 + 0].z = -Extent;
+		OutVertices[QuadIndex * 4 + 0].y = Y0;
+		OutVertices[QuadIndex * 4 + 0].z = Z0;
 		OutVertices[QuadIndex * 4 + 0].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 0].u = U0;
-		OutVertices[QuadIndex * 4 + 0].v = 0;
+		OutVertices[QuadIndex * 4 + 0].v = V0;
 
-		OutVertices[QuadIndex * 4 + 1].x = X0 + WidthPerQuad;
-		OutVertices[QuadIndex * 4 + 1].y = Y + NextHeight * Elevation;
-		OutVertices[QuadIndex * 4 + 1].z = -Extent;
+		OutVertices[QuadIndex * 4 + 1].x = X0 + WidthPerQuadX;
+		OutVertices[QuadIndex * 4 + 1].y = Y1;
+		OutVertices[QuadIndex * 4 + 1].z = Z0;
 		OutVertices[QuadIndex * 4 + 1].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 1].u = U0 + UWidth;
-		OutVertices[QuadIndex * 4 + 1].v = 0;
+		OutVertices[QuadIndex * 4 + 1].v = V0;
 
-		OutVertices[QuadIndex * 4 + 2].x = X0 + WidthPerQuad;
-		OutVertices[QuadIndex * 4 + 2].y = Y + NextHeight * Elevation;
-		OutVertices[QuadIndex * 4 + 2].z = Extent;
+		OutVertices[QuadIndex * 4 + 2].x = X0 + WidthPerQuadX;
+		OutVertices[QuadIndex * 4 + 2].y = Y1;
+		OutVertices[QuadIndex * 4 + 2].z = Z0 + WidthPerQuadZ;
 		OutVertices[QuadIndex * 4 + 2].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 2].u = U0 + UWidth;
-		OutVertices[QuadIndex * 4 + 2].v = 1;
+		OutVertices[QuadIndex * 4 + 2].v = V0 + VWidth;
 
 		OutVertices[QuadIndex * 4 + 3].x = X0;
-		OutVertices[QuadIndex * 4 + 3].y = Y + CurrentHeight * Elevation;
-		OutVertices[QuadIndex * 4 + 3].z = Extent;
+		OutVertices[QuadIndex * 4 + 3].y = Y0;
+		OutVertices[QuadIndex * 4 + 3].z = Z0 + WidthPerQuadZ;
 		OutVertices[QuadIndex * 4 + 3].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 3].u = U0;
-		OutVertices[QuadIndex * 4 + 3].v = 1;
+		OutVertices[QuadIndex * 4 + 3].v = V0 + VWidth;
 	}
 }
