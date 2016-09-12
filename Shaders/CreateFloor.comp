@@ -36,58 +36,40 @@ layout(set = 0, binding = 3) uniform sampler2D Heightmap;
 
 void main()
 {
-	int QuadIndex = int(gl_GlobalInvocationID.x);
+	int QuadIndexX = int(gl_GlobalInvocationID.x);
+	int QuadIndexZ = int(gl_GlobalInvocationID.z);
+	int QuadIndex = QuadIndexX + QuadIndexZ * NumQuadsX;
 
-	if (QuadIndex < NumQuadsX)
+	if (QuadIndexX < NumQuadsX && QuadIndexZ < NumQuadsZ)
 	{
-		OutIndices[QuadIndex * 6 + 0] = QuadIndex * 4 + 0;
-		OutIndices[QuadIndex * 6 + 1] = QuadIndex * 4 + 1;
-		OutIndices[QuadIndex * 6 + 2] = QuadIndex * 4 + 3;
-		OutIndices[QuadIndex * 6 + 3] = QuadIndex * 4 + 1;
-		OutIndices[QuadIndex * 6 + 4] = QuadIndex * 4 + 2;
-		OutIndices[QuadIndex * 6 + 5] = QuadIndex * 4 + 3;
-
 		float Width = 2.0 * Extent;
 		float WidthPerQuadX = Width / float(NumQuadsX);
-		float WidthPerQuadZ = Width;
-		float X0 = -Extent + WidthPerQuadX * float(QuadIndex);
+		float WidthPerQuadZ = Width / float(NumQuadsZ);
+		float X = -Extent + WidthPerQuadX * float(QuadIndexX);
+		float Z = -Extent + WidthPerQuadZ * float(QuadIndexZ);
+
 		float UWidth = 1.0 / float(NumQuadsX);
-		float U0 = UWidth * float(QuadIndex);
-		float VWidth = 1.0;
-		float V0 = 0.0;
-		float Z0 = -Extent;
+		float U = UWidth * float(QuadIndexX);
+		float VWidth = 1.0 / float(NumQuadsZ);
+		float V = VWidth * float(QuadIndexZ);
 
-		float CurrentHeight = texture(Heightmap, vec2(U0, V0)).x;
-		float NextHeight = texture(Heightmap, vec2(U0 + UWidth, V0 + VWidth)).x;
-		float Y0 = Y + Elevation * CurrentHeight;
-		float Y1 = Y + Elevation * NextHeight;
+		float Height = texture(Heightmap, vec2(U, V)).x;
+		float Y = Y + Elevation * Height;
 
-		OutVertices[QuadIndex * 4 + 0].x = X0;
-		OutVertices[QuadIndex * 4 + 0].y = Y0;
-		OutVertices[QuadIndex * 4 + 0].z = Z0;
-		OutVertices[QuadIndex * 4 + 0].Color = uint(-1);
-		OutVertices[QuadIndex * 4 + 0].u = U0;
-		OutVertices[QuadIndex * 4 + 0].v = V0;
-
-		OutVertices[QuadIndex * 4 + 1].x = X0 + WidthPerQuadX;
-		OutVertices[QuadIndex * 4 + 1].y = Y1;
-		OutVertices[QuadIndex * 4 + 1].z = Z0;
-		OutVertices[QuadIndex * 4 + 1].Color = uint(-1);
-		OutVertices[QuadIndex * 4 + 1].u = U0 + UWidth;
-		OutVertices[QuadIndex * 4 + 1].v = V0;
-
-		OutVertices[QuadIndex * 4 + 2].x = X0 + WidthPerQuadX;
-		OutVertices[QuadIndex * 4 + 2].y = Y1;
-		OutVertices[QuadIndex * 4 + 2].z = Z0 + WidthPerQuadZ;
-		OutVertices[QuadIndex * 4 + 2].Color = uint(-1);
-		OutVertices[QuadIndex * 4 + 2].u = U0 + UWidth;
-		OutVertices[QuadIndex * 4 + 2].v = V0 + VWidth;
-
-		OutVertices[QuadIndex * 4 + 3].x = X0;
-		OutVertices[QuadIndex * 4 + 3].y = Y0;
-		OutVertices[QuadIndex * 4 + 3].z = Z0 + WidthPerQuadZ;
-		OutVertices[QuadIndex * 4 + 3].Color = uint(-1);
-		OutVertices[QuadIndex * 4 + 3].u = U0;
-		OutVertices[QuadIndex * 4 + 3].v = V0 + VWidth;
+		OutVertices[QuadIndex].x = X;
+		OutVertices[QuadIndex].y = Y;
+		OutVertices[QuadIndex].z = Z;
+		OutVertices[QuadIndex].Color = uint(-1);
+		OutVertices[QuadIndex].u = U;
+		OutVertices[QuadIndex].v = V;
+		if (QuadIndex != 0 && QuadIndexZ != 0)
+		{
+			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 0] = NumQuadsX * QuadIndexZ + QuadIndexX;
+			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 1] = NumQuadsX * QuadIndexZ + QuadIndexX - 1;
+			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 2] = NumQuadsX * (QuadIndexZ - 1 ) + QuadIndexX - 1;
+			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 3] = NumQuadsX * (QuadIndexZ - 1 ) + QuadIndexX - 1;
+			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 4] = NumQuadsX * (QuadIndexZ - 1) + QuadIndexX;
+			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 5] = NumQuadsX * QuadIndexZ + QuadIndexX;
+		}
 	}
 }
