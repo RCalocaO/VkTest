@@ -28,7 +28,10 @@ layout (set = 0, binding = 2) uniform UB
 	float Y;
 	float Extent;
 	int NumQuadsX;
+	float Elevation;
 };
+
+layout(set = 0, binding = 3) uniform sampler2D Heightmap;
 
 void main()
 {
@@ -49,29 +52,32 @@ void main()
 		float UWidth = 1.0 / float(NumQuadsX);
 		float U0 = UWidth * float(QuadIndex);
 
+		float CurrentHeight = texture(Heightmap, vec2(U0, 0.0)).x;
+		float NextHeight = texture(Heightmap, vec2(U0 + UWidth, 0.0)).x;
+
 		OutVertices[QuadIndex * 4 + 0].x = X0;
-		OutVertices[QuadIndex * 4 + 0].y = Y;
+		OutVertices[QuadIndex * 4 + 0].y = Y + CurrentHeight * Elevation;
 		OutVertices[QuadIndex * 4 + 0].z = -Extent;
 		OutVertices[QuadIndex * 4 + 0].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 0].u = U0;
 		OutVertices[QuadIndex * 4 + 0].v = 0;
 
 		OutVertices[QuadIndex * 4 + 1].x = X0 + WidthPerQuad;
-		OutVertices[QuadIndex * 4 + 1].y = Y;
+		OutVertices[QuadIndex * 4 + 1].y = Y + NextHeight * Elevation;
 		OutVertices[QuadIndex * 4 + 1].z = -Extent;
 		OutVertices[QuadIndex * 4 + 1].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 1].u = U0 + UWidth;
 		OutVertices[QuadIndex * 4 + 1].v = 0;
 
 		OutVertices[QuadIndex * 4 + 2].x = X0 + WidthPerQuad;
-		OutVertices[QuadIndex * 4 + 2].y = Y;
+		OutVertices[QuadIndex * 4 + 2].y = Y + NextHeight * Elevation;
 		OutVertices[QuadIndex * 4 + 2].z = Extent;
 		OutVertices[QuadIndex * 4 + 2].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 2].u = U0 + UWidth;
 		OutVertices[QuadIndex * 4 + 2].v = 1;
 
 		OutVertices[QuadIndex * 4 + 3].x = X0;
-		OutVertices[QuadIndex * 4 + 3].y = Y;
+		OutVertices[QuadIndex * 4 + 3].y = Y + CurrentHeight * Elevation;
 		OutVertices[QuadIndex * 4 + 3].z = Extent;
 		OutVertices[QuadIndex * 4 + 3].Color = uint(-1);
 		OutVertices[QuadIndex * 4 + 3].u = U0;

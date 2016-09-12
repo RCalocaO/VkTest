@@ -25,6 +25,7 @@ struct FCreateFloorUB
 	float Y;
 	float Extent;
 	uint32 NumQuadsX;
+	float Elevation;
 };
 static FUniformBuffer<FCreateFloorUB> GCreateFloorUB;
 
@@ -108,6 +109,7 @@ struct FSetupFloorPSO : public FComputePSO
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 		AddBinding(OutBindings, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+		AddBinding(OutBindings, 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	}
 };
 static FSetupFloorPSO GSetupFloorPSO;
@@ -484,12 +486,14 @@ static void SetupFloor()
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 */
 	uint32 NumQuadsX = 16;
+	float Elevation = 40;
 	GCreateFloorUB.Create(GDevice.Device, &GMemMgr);
 	{
 		FCreateFloorUB& CreateFloorUB = *GCreateFloorUB.GetMappedData();
 		CreateFloorUB.Y = 10;
 		CreateFloorUB.Extent = 250;
 		CreateFloorUB.NumQuadsX = NumQuadsX;
+		CreateFloorUB.Elevation = Elevation;
 	}
 
 	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4 * NumQuadsX, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -511,6 +515,7 @@ static void SetupFloor()
 				WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
 				WriteDescriptors.AddStorageBuffer(DescriptorSet, 1, GFloorVB.Buffer);
 				WriteDescriptors.AddUniformBuffer(DescriptorSet, 2, GCreateFloorUB);
+				WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 3, GSampler, GHeightMap.ImageView);
 				vkUpdateDescriptorSets(GDevice.Device, WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 				vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 			}
@@ -577,7 +582,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	FViewUB& ViewUB = *GViewUB.GetMappedData();
 	ViewUB.View = FMatrix4x4::GetIdentity();
-	ViewUB.View.Values[3 * 4 + 2] = -2;
+	ViewUB.View.Values[3 * 4 + 2] = -10;
 	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
 
 	{
@@ -591,10 +596,11 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	}
 
 	CreateAndFillTexture();
+
+	GSampler.Create(GDevice.Device);
 	SetupFloor();
 
 	GSceneColorAfterPost.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
-	GSampler.Create(GDevice.Device);
 	GSceneColor.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GDepthBuffer.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 
