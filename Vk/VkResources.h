@@ -622,7 +622,7 @@ public:
 
 	friend inline bool operator < (const FGfxPSOLayout& A, const FGfxPSOLayout& B)
 	{
-		return A.Width < B.Width && A.Height < B.Height && A.GfxPSO < B.GfxPSO && A.VF < B.VF && A.RenderPass < B.RenderPass;
+		return A.Width < B.Width || A.Height < B.Height || A.GfxPSO < B.GfxPSO || A.VF < B.VF || A.RenderPass < B.RenderPass;
 	}
 protected:
 	FGfxPSO* GfxPSO;
