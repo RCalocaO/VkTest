@@ -25,6 +25,7 @@ struct FCreateFloorUB
 	float Y;
 	float Extent;
 	uint32 NumQuadsX;
+	uint32 NumQuadsZ;
 	float Elevation;
 };
 static FUniformBuffer<FCreateFloorUB> GCreateFloorUB;
@@ -486,6 +487,7 @@ static void SetupFloor()
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 */
 	uint32 NumQuadsX = 16;
+	uint32 NumQuadsZ = 1;
 	float Elevation = 40;
 	GCreateFloorUB.Create(GDevice.Device, &GMemMgr);
 	{
@@ -493,12 +495,13 @@ static void SetupFloor()
 		CreateFloorUB.Y = 10;
 		CreateFloorUB.Extent = 250;
 		CreateFloorUB.NumQuadsX = NumQuadsX;
+		CreateFloorUB.NumQuadsZ = NumQuadsZ;
 		CreateFloorUB.Elevation = Elevation;
 	}
 
-	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4 * NumQuadsX, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	GFloorVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * 4 * NumQuadsX * NumQuadsZ, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-	GFloorIB.Create(GDevice.Device, 3 * 2 * NumQuadsX, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	GFloorIB.Create(GDevice.Device, 3 * 2 * NumQuadsX* NumQuadsZ, VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	{
 		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
@@ -520,7 +523,7 @@ static void SetupFloor()
 				vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
 			}
 
-			vkCmdDispatch(CmdBuffer->CmdBuffer, NumQuadsX, 1, 1);
+			vkCmdDispatch(CmdBuffer->CmdBuffer, NumQuadsX, 1, NumQuadsZ);
 			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorIB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
 			BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &GFloorVB.Buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
 		}
