@@ -59,10 +59,10 @@ void main()
 		OutVertices[QuadIndex].x = X;
 		OutVertices[QuadIndex].y = Y;
 		OutVertices[QuadIndex].z = Z;
-		OutVertices[QuadIndex].Color = uint(-1);
+		OutVertices[QuadIndex].Color = QuadIndexX * 65536 + QuadIndexZ;
 		OutVertices[QuadIndex].u = U;
 		OutVertices[QuadIndex].v = V;
-		if (QuadIndex != 0 && QuadIndexZ != 0)
+		if (QuadIndexX != 0 && QuadIndexZ != 0)
 		{
 			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 0] = NumQuadsX * QuadIndexZ + QuadIndexX;
 			OutIndices[(QuadIndexX - 1 + NumQuadsX * (QuadIndexZ - 1)) * 6 + 1] = NumQuadsX * QuadIndexZ + QuadIndexX - 1;
