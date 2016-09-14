@@ -611,18 +611,19 @@ struct FVertexFormat
 class FGfxPSOLayout
 {
 public:
-	FGfxPSOLayout(FGfxPSO* InGfxPSO, FVertexFormat* InVF, uint32 InWidth, uint32 InHeight, VkRenderPass InRenderPass)
+	FGfxPSOLayout(FGfxPSO* InGfxPSO, FVertexFormat* InVF, uint32 InWidth, uint32 InHeight, VkRenderPass InRenderPass, bool bInWireframe)
 		: GfxPSO(InGfxPSO)
 		, VF(InVF)
 		, Width(InWidth)
 		, Height(InHeight)
 		, RenderPass(InRenderPass)
+		, bWireframe(bInWireframe)
 	{
 	}
 
 	friend inline bool operator < (const FGfxPSOLayout& A, const FGfxPSOLayout& B)
 	{
-		return A.Width < B.Width || A.Height < B.Height || A.GfxPSO < B.GfxPSO || A.VF < B.VF || A.RenderPass < B.RenderPass;
+		return A.Width < B.Width || A.Height < B.Height || A.GfxPSO < B.GfxPSO || A.VF < B.VF || A.RenderPass < B.RenderPass || A.bWireframe < B.bWireframe;
 	}
 protected:
 	FGfxPSO* GfxPSO;
@@ -630,6 +631,7 @@ protected:
 	uint32 Width;
 	uint32 Height;
 	VkRenderPass RenderPass;
+	bool bWireframe;
 };
 
 struct FComputePSO : public FPSO

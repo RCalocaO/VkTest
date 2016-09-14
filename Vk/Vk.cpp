@@ -7,6 +7,8 @@
 #include "../Meshes/ObjLoader.h"
 
 
+EViewMode GViewMode = EViewMode::Solid;
+
 static FInstance GInstance;
 static FDevice GDevice;
 static FMemManager GMemMgr;
@@ -215,9 +217,9 @@ struct FObjectCache
 		return NewFramebuffer;
 	}
 
-	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, VkRenderPass RenderPass, bool bWireframe = false)
 	{
-		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass);
+		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass, bWireframe);
 		auto Found = GfxPipelines.find(Layout);
 		if (Found != GfxPipelines.end())
 		{
@@ -225,6 +227,7 @@ struct FObjectCache
 		}
 
 		auto* NewPipeline = new FGfxPipeline;
+		NewPipeline->RSInfo.polygonMode = bWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
 		NewPipeline->Create(Device->Device, GfxPSO, VF, Width, Height, RenderPass);
 		GfxPipelines[Layout] = NewPipeline;
 		return NewPipeline;
@@ -513,8 +516,8 @@ static void SetupFloor()
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(&GFloorVB.Buffer, FillVertices, sizeof(FPosColorUVVertex) * 4);
 */
-	uint32 NumQuadsX = 16;
-	uint32 NumQuadsZ = 16;
+	uint32 NumQuadsX = 128;
+	uint32 NumQuadsZ = 128;
 	float Elevation = 40;
 	GCreateFloorUB.Create(GDevice.Device, &GMemMgr);
 	{
@@ -691,7 +694,7 @@ static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, ui
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
 	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height));
 
-	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass->RenderPass);
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass->RenderPass, GViewMode == EViewMode::Wireframe);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);

@@ -176,6 +176,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			DoResize(width, height);
 		}
 		break;
+	case WM_CHAR:
+		{
+			int Key = LOWORD(wParam);
+			switch (Key)
+			{
+			case '1':
+				GViewMode = EViewMode::Wireframe;
+				break;
+			case '2':
+				GViewMode = EViewMode::Solid;
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+
 	case WM_DESTROY:
 		bDestroyed = true;
 		DoDeinit();
