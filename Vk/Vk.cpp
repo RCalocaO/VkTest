@@ -6,7 +6,9 @@
 #include "VkResources.h"
 #include "../Meshes/ObjLoader.h"
 
-#define TRY_MULTITHREADED	1
+// 0 no multithreading
+// 1 inside a render pass
+// 2 run post
 
 FVector3 GStepDirection = {0, 0, 0};
 FVector4 GCameraPos = {0, 0, -10, 1};
@@ -748,9 +750,8 @@ static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, uint32 Wi
 
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
 	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height);
-	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED > 0);
-
-#if TRY_MULTITHREADED
+	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED == 1);
+#if TRY_MULTITHREADED == 1
 	{
 		GThread.ParentCmdBuffer = CmdBuffer;
 		GThread.Width = Width;
@@ -759,15 +760,9 @@ static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, uint32 Wi
 		GThread.Framebuffer = Framebuffer;
 		ResetEvent(GThread.DoneEvent);
 		SetEvent(GThread.StartEvent);
-		//GThreadInterop.bStartWork = true;
 		WaitForSingleObject(GThread.DoneEvent, INFINITE);
-		//while (!GThreadInterop.bWorkDone)
-		//{
-		//	::Sleep(0);
-		//}
+		CmdBuffer->ExecuteSecondary();
 	}
-
-	CmdBuffer->ExecuteSecondary();
 #else
 	InternalRenderFrame(Device, RenderPass, CmdBuffer, Width, Height);
 #endif
@@ -814,10 +809,13 @@ DWORD FThread::ThreadFunction(void* Param)
 		VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
 		FPrimaryCmdBuffer* ParentCmdBuffer = (FPrimaryCmdBuffer*)This->ParentCmdBuffer;
 		auto* CmdBuffer = ThreadMgr.AllocateSecondaryCmdBuffer(ParentCmdBuffer->Fence);
-		CmdBuffer->BeginSecondary(ParentCmdBuffer, This->RenderPass->RenderPass, This->Framebuffer->Framebuffer);
-		//RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
+		CmdBuffer->BeginSecondary(ParentCmdBuffer, This->RenderPass ? This->RenderPass->RenderPass : VK_NULL_HANDLE, This->Framebuffer ? This->Framebuffer->Framebuffer : VK_NULL_HANDLE);
 
+#if TRY_MULTITHREADED == 1
 		InternalRenderFrame(GDevice.Device, (FRenderPass*)This->RenderPass, CmdBuffer, This->Width, This->Height);
+#elif TRY_MULTITHREADED == 2
+		RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
+#endif
 
 		CmdBuffer->End();
 
@@ -848,7 +846,21 @@ void DoRender()
 
 	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
 	RenderFrame(GDevice.Device, CmdBuffer, GSceneColor.GetWidth(), GSceneColor.GetHeight(), GSceneColor.GetImageView(), GSceneColor.GetFormat(), &GDepthBuffer);
+#if TRY_MULTITHREADED == 2
+	{
+		GThread.ParentCmdBuffer = CmdBuffer;
+		GThread.Width = 0;
+		GThread.Height = 0;
+		GThread.RenderPass = nullptr;
+		GThread.Framebuffer = nullptr;
+		ResetEvent(GThread.DoneEvent);
+		SetEvent(GThread.StartEvent);
+		WaitForSingleObject(GThread.DoneEvent, INFINITE);
+		CmdBuffer->ExecuteSecondary();
+	}
+#else
 	RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
+#endif
 
 	// Blit post into scene color
 	GSwapchain.AcquireNextImage();
