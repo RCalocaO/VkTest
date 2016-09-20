@@ -235,15 +235,15 @@ struct FStagingBuffer : public FBuffer
 	FCmdBuffer* CmdBuffer = nullptr;
 	uint64 FenceCounter = 0;
 
-	void SetFence(FCmdBuffer* InCmdBuffer)
+	void SetFence(FPrimaryCmdBuffer* InCmdBuffer)
 	{
 		CmdBuffer = InCmdBuffer;
-		FenceCounter = InCmdBuffer->Fence.FenceSignaledCounter;
+		FenceCounter = InCmdBuffer->Fence->FenceSignaledCounter;
 	}
 
 	bool IsSignaled() const
 	{
-		return FenceCounter < CmdBuffer->Fence.FenceSignaledCounter;
+		return FenceCounter < CmdBuffer->Fence->FenceSignaledCounter;
 	}
 };
 
@@ -1021,7 +1021,7 @@ inline void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, V
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
 }
 
-inline void BufferBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkBuffer Buffer, VkDeviceSize Offset, VkDeviceSize Size, VkAccessFlags SrcMask, VkAccessFlags DstMask)
+inline void BufferBarrier(FPrimaryCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkBuffer Buffer, VkDeviceSize Offset, VkDeviceSize Size, VkAccessFlags SrcMask, VkAccessFlags DstMask)
 {
 	VkBufferMemoryBarrier Barrier;
 	MemZero(Barrier);
@@ -1036,7 +1036,7 @@ inline void BufferBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, 
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 1, &Barrier, 0, nullptr);
 }
 
-inline void BufferBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, FBuffer* Buffer, VkAccessFlags SrcMask, VkAccessFlags DstMask)
+inline void BufferBarrier(FPrimaryCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, FBuffer* Buffer, VkAccessFlags SrcMask, VkAccessFlags DstMask)
 {
 	BufferBarrier(CmdBuffer, SrcStage, DestStage, Buffer->Buffer, Buffer->GetBindOffset(), Buffer->GetSize(), SrcMask, DstMask);
 }
@@ -1105,7 +1105,7 @@ struct FSwapchain
 		return SurfaceResolution.height;
 	}
 
-	void ClearAndTransitionToPresent(FCmdBuffer* CmdBuffer)
+	void ClearAndTransitionToPresent(FPrimaryCmdBuffer* CmdBuffer)
 	{
 		VkClearColorValue Color;
 		MemZero(Color);
@@ -1166,7 +1166,7 @@ inline void FlushMappedBuffer(VkDevice Device, FBuffer* Buffer)
 	vkInvalidateMappedMemoryRanges(Device, 1, &Range);
 }
 
-inline void CopyBuffer(FCmdBuffer* CmdBuffer, FBuffer* SrcBuffer, FBuffer* DestBuffer)
+inline void CopyBuffer(FPrimaryCmdBuffer* CmdBuffer, FBuffer* SrcBuffer, FBuffer* DestBuffer)
 {
 	VkBufferCopy Region;
 	MemZero(Region);
@@ -1177,7 +1177,7 @@ inline void CopyBuffer(FCmdBuffer* CmdBuffer, FBuffer* SrcBuffer, FBuffer* DestB
 }
 
 template <typename TFillLambda>
-inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
+inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
 {
 	void* Data = StagingBuffer->GetMappedData();
 	check(Data);
@@ -1188,7 +1188,7 @@ inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FCmdBuffer* CmdB
 }
 
 template <typename TFillLambda>
-inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FCmdBuffer* CmdBuffer, FImage* DestImage, TFillLambda Fill)
+inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer* CmdBuffer, FImage* DestImage, TFillLambda Fill)
 {
 	void* Data = StagingBuffer->GetMappedData();
 	check(Data);
@@ -1211,9 +1211,9 @@ inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FCmdBuffer* CmdBu
 	StagingBuffer->SetFence(CmdBuffer);
 }
 
-inline void CopyColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
+inline void CopyColorImage(FPrimaryCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
 {
-	check(CmdBuffer->State == FCmdBuffer::EState::Begun);
+	check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Begun);
 	VkImageCopy CopyRegion;
 	MemZero(CopyRegion);
 	CopyRegion.extent.width = Width;
@@ -1228,9 +1228,9 @@ inline void CopyColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, V
 	vkCmdCopyImage(CmdBuffer->CmdBuffer, SrcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, DstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &CopyRegion);
 };
 
-inline void BlitColorImage(FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
+inline void BlitColorImage(FPrimaryCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)
 {
-	check(CmdBuffer->State == FCmdBuffer::EState::Begun);
+	check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Begun);
 	VkImageBlit BlitRegion;
 	MemZero(BlitRegion);
 	BlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;

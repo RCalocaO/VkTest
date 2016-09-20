@@ -229,8 +229,9 @@ struct FFence
 struct FCmdBuffer
 {
 	VkCommandBuffer CmdBuffer = VK_NULL_HANDLE;
-	FFence Fence;
 	VkDevice Device = VK_NULL_HANDLE;
+
+	FFence* Fence = nullptr;
 
 	enum class EState
 	{
@@ -240,60 +241,23 @@ struct FCmdBuffer
 		Submitted,
 		InsideRenderPass,
 	};
-
 	EState State = EState::ReadyForBegin;
-
-	void Create(VkDevice InDevice, VkCommandPool Pool)
-	{
-		Device = InDevice;
-
-		Fence.Create(Device);
-
-		VkCommandBufferAllocateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		Info.commandPool = Pool;
-		Info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		Info.commandBufferCount = 1;
-
-		checkVk(vkAllocateCommandBuffers(Device, &Info, &CmdBuffer));
-	}
 
 	void Destroy(VkDevice Device, VkCommandPool Pool)
 	{
 		if (State == EState::Submitted)
 		{
 			RefreshState();
-			if (Fence.IsNotSignaled())
+			if (Fence->IsNotSignaled())
 			{
 				const uint64 TimeToWaitInNanoseconds = 5;
-				Fence.Wait(TimeToWaitInNanoseconds);
+				Fence->Wait(TimeToWaitInNanoseconds);
 			}
 			RefreshState();
 		}
-		Fence.Destroy(Device);
+		Fence->Destroy(Device);
 		vkFreeCommandBuffers(Device, Pool, 1, &CmdBuffer);
 		CmdBuffer = VK_NULL_HANDLE;
-	}
-
-	void Begin()
-	{
-		check(State == EState::ReadyForBegin);
-
-		VkCommandBufferBeginInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		Info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-		checkVk(vkBeginCommandBuffer(CmdBuffer, &Info));
-
-		State = EState::Begun;
-	}
-
-	void End()
-	{
-		check(State == EState::Begun);
-		checkVk(vkEndCommandBuffer(CmdBuffer));
-		State = EState::Ended;
 	}
 
 	void BeginRenderPass(VkRenderPass RenderPass, const struct FFramebuffer& Framebuffer);
@@ -311,7 +275,7 @@ struct FCmdBuffer
 	{
 		if (State == EState::Submitted)
 		{
-			Fence.Wait();
+			Fence->Wait();
 			RefreshState();
 		}
 	}
@@ -320,14 +284,128 @@ struct FCmdBuffer
 	{
 		if (State == EState::Submitted)
 		{
-			uint64 PrevCounter = Fence.FenceSignaledCounter;
-			Fence.RefreshState();
-			if (PrevCounter != Fence.FenceSignaledCounter)
+			uint64 PrevCounter = Fence->FenceSignaledCounter;
+			Fence->RefreshState();
+			if (PrevCounter != Fence->FenceSignaledCounter)
 			{
 				checkVk(vkResetCommandBuffer(CmdBuffer, 0));
 				State = EState::ReadyForBegin;
 			}
 		}
+	}
+
+	virtual struct FSecondaryCmdBuffer* GetSecondary()
+	{
+		return nullptr;
+	}
+
+	void End()
+	{
+		check(State == EState::Begun);
+		checkVk(vkEndCommandBuffer(CmdBuffer));
+		State = EState::Ended;
+	}
+};
+
+struct FPrimaryCmdBuffer : public FCmdBuffer
+{
+	FFence PrimaryFence;
+
+	void Create(VkDevice InDevice, VkCommandPool Pool)
+	{
+		Device = InDevice;
+
+		PrimaryFence.Create(Device);
+		Fence = &PrimaryFence;
+
+		VkCommandBufferAllocateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		Info.commandPool = Pool;
+		Info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		Info.commandBufferCount = 1;
+
+		checkVk(vkAllocateCommandBuffers(Device, &Info, &CmdBuffer));
+	}
+
+	void Begin()
+	{
+		check(State == EState::ReadyForBegin);
+
+		VkCommandBufferBeginInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		Info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		checkVk(vkBeginCommandBuffer(CmdBuffer, &Info));
+
+		State = EState::Begun;
+	}
+
+	void ExecuteSecondary()
+	{
+		check(State != FCmdBuffer::EState::Ended && State != FCmdBuffer::EState::Submitted);
+		if (!Secondary.empty())
+		{
+			vkCmdExecuteCommands(CmdBuffer, (uint32)Secondary.size(), &SecondaryList[0]);
+			Secondary.resize(0);
+			SecondaryList.resize(0);
+		}
+	}
+
+	std::list<struct FSecondaryCmdBuffer*> Secondary;
+	std::vector<VkCommandBuffer> SecondaryList;
+};
+
+struct FSecondaryCmdBuffer : public FCmdBuffer
+{
+	void BeginSecondary(FPrimaryCmdBuffer* ParentCmdBuffer, VkRenderPass RenderPass)
+	{
+		check(State == EState::ReadyForBegin);
+
+		VkCommandBufferInheritanceInfo Inheritance;
+		MemZero(Inheritance);
+		Inheritance.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		//VkRenderPass                     renderPass;
+		//uint32_t                         subpass;
+		//VkFramebuffer                    framebuffer;
+		//VkBool32                         occlusionQueryEnable;
+		//VkQueryControlFlags              queryFlags;
+		//VkQueryPipelineStatisticFlags    pipelineStatistics;
+
+		VkCommandBufferBeginInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		Info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		if (RenderPass != VK_NULL_HANDLE)
+		{
+			Info.flags |= VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+		}
+		Info.pInheritanceInfo = &Inheritance;
+		checkVk(vkBeginCommandBuffer(CmdBuffer, &Info));
+
+		State = EState::Begun;
+
+		ParentCmdBuffer->Secondary.push_back(this);
+		ParentCmdBuffer->SecondaryList.push_back(CmdBuffer);
+	}
+
+	void CreateSecondary(VkDevice InDevice, VkCommandPool Pool, FFence* ParentFence)
+	{
+		Device = InDevice;
+
+		VkCommandBufferAllocateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		Info.commandPool = Pool;
+		Info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+		Info.commandBufferCount = 1;
+
+		checkVk(vkAllocateCommandBuffers(Device, &Info, &CmdBuffer));
+	}
+
+	virtual struct FSecondaryCmdBuffer* GetSecondary()
+	{
+		return this;
 	}
 };
 
@@ -341,12 +419,12 @@ public:
 	FCmdBufferFence(FCmdBuffer* InCmdBuffer)
 	{
 		CmdBuffer = InCmdBuffer;
-		FenceSignaledCounter = InCmdBuffer->Fence.FenceSignaledCounter;
+		FenceSignaledCounter = InCmdBuffer->Fence->FenceSignaledCounter;
 	}
 
 	bool HasFencePassed() const
 	{
-		return FenceSignaledCounter < CmdBuffer->Fence.FenceSignaledCounter;
+		return FenceSignaledCounter < CmdBuffer->Fence->FenceSignaledCounter;
 	}
 };
 
@@ -397,27 +475,53 @@ struct FCmdBufferMgr
 		}
 		CmdBuffers.clear();
 
+		for (auto* CB : SecondaryCmdBuffers)
+		{
+			CB->RefreshState();
+			CB->Destroy(Device, Pool);
+			delete CB;
+		}
+		SecondaryCmdBuffers.clear();
+
 		vkDestroyCommandPool(Device, Pool, nullptr);
 		Pool = VK_NULL_HANDLE;
 	}
 
-	FCmdBuffer* AllocateCmdBuffer()
+	FPrimaryCmdBuffer* AllocateCmdBuffer()
 	{
 		for (auto* CmdBuffer : CmdBuffers)
 		{
 			CmdBuffer->RefreshState();
-			if (CmdBuffer->State == FCmdBuffer::EState::ReadyForBegin)
+			if (CmdBuffer->State == FPrimaryCmdBuffer::EState::ReadyForBegin)
 			{
 				return CmdBuffer;
 			}
 		}
 
-		auto* NewCmdBuffer = new FCmdBuffer;
+		auto* NewCmdBuffer = new FPrimaryCmdBuffer;
 		NewCmdBuffer->Create(Device, Pool);
 		CmdBuffers.push_back(NewCmdBuffer);
 		return NewCmdBuffer;
 	}
 
+	FSecondaryCmdBuffer* AllocateSecondaryCmdBuffer(FFence* ParentFence)
+	{
+		for (auto* CmdBuffer : SecondaryCmdBuffers)
+		{
+			CmdBuffer->RefreshState();
+			if (CmdBuffer->State == FPrimaryCmdBuffer::EState::ReadyForBegin)
+			{
+				CmdBuffer->Fence = ParentFence;
+				return CmdBuffer;
+			}
+		}
+
+		auto* NewCmdBuffer = new FSecondaryCmdBuffer;
+		NewCmdBuffer->CreateSecondary(Device, Pool, ParentFence);
+		SecondaryCmdBuffers.push_back(NewCmdBuffer);
+		return NewCmdBuffer;
+	}
+/*
 	FCmdBuffer* GetActiveCmdBuffer()
 	{
 		for (auto* CB : CmdBuffers)
@@ -434,12 +538,46 @@ struct FCmdBufferMgr
 			}
 		}
 
+		for (auto* CB : SecondaryCmdBuffers)
+		{
+			switch (CB->State)
+			{
+			case FCmdBuffer::EState::Submitted:
+				CB->RefreshState();
+				break;
+			case FCmdBuffer::EState::ReadyForBegin:
+				return CB;
+			default:
+				break;
+			}
+		}
+
+		return AllocateCmdBuffer();
+	}*/
+
+	FPrimaryCmdBuffer* GetActivePrimaryCmdBuffer()
+	{
+		for (auto* CB : CmdBuffers)
+		{
+			switch (CB->State)
+			{
+			case FPrimaryCmdBuffer::EState::Submitted:
+				CB->RefreshState();
+				break;
+			case FPrimaryCmdBuffer::EState::ReadyForBegin:
+				return CB;
+			default:
+				break;
+			}
+		}
+
 		return AllocateCmdBuffer();
 	}
 
-	void Submit(FCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
+	void Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
 	{
-		check(CmdBuffer->State == FCmdBuffer::EState::Ended);
+		check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Ended);
+		check(CmdBuffer->Secondary.empty());
 		VkPipelineStageFlags StageMask[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		VkSubmitInfo Info;
 		MemZero(Info);
@@ -457,9 +595,9 @@ struct FCmdBufferMgr
 			Info.signalSemaphoreCount = 1;
 			Info.pSignalSemaphores = &SignaledSemaphore->Semaphore;
 		}
-		checkVk(vkQueueSubmit(Queue, 1, &Info, CmdBuffer->Fence.Fence));
-		CmdBuffer->Fence.State = FFence::EState::NotSignaled;
-		CmdBuffer->State = FCmdBuffer::EState::Submitted;
+		checkVk(vkQueueSubmit(Queue, 1, &Info, CmdBuffer->Fence->Fence));
+		CmdBuffer->Fence->State = FFence::EState::NotSignaled;
+		CmdBuffer->State = FPrimaryCmdBuffer::EState::Submitted;
 		Update();
 	}
 
@@ -469,9 +607,15 @@ struct FCmdBufferMgr
 		{
 			CmdBuffer->RefreshState();
 		}
+
+		for (auto* CmdBuffer : SecondaryCmdBuffers)
+		{
+			CmdBuffer->RefreshState();
+		}
 	}
 
-	std::list<FCmdBuffer*> CmdBuffers;
+	std::list<FPrimaryCmdBuffer*> CmdBuffers;
+	std::list<FSecondaryCmdBuffer*> SecondaryCmdBuffers;
 };
 
 static inline uint32 GetFormatBitsPerPixel(VkFormat Format)

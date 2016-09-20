@@ -6,6 +6,7 @@
 #include "VkResources.h"
 #include "../Meshes/ObjLoader.h"
 
+#define TRY_MULTITHREADED	0
 
 FVector3 GStepDirection = {0, 0, 0};
 FVector4 GCameraPos = {0, 0, -10, 1};
@@ -476,7 +477,7 @@ void CreateAndFillTexture()
 }
 
 
-static void FillFloor(FCmdBuffer* CmdBuffer)
+static void FillFloor(FPrimaryCmdBuffer* CmdBuffer)
 {
 	BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorVB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
 	BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorIB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
@@ -627,7 +628,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	return true;
 }
 
-static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FPrimaryCmdBuffer* CmdBuffer)
 {
 	FObjUB& ObjUB = *GObjUB.GetMappedData();
 	static float AngleDegrees = 0;
@@ -651,7 +652,7 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	vkCmdDraw(CmdBuffer->CmdBuffer, (uint32)GObj.Faces.size() * 3, 1, 0, 0);
 }
 
-static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FPrimaryCmdBuffer* CmdBuffer)
 {
 	auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
@@ -696,7 +697,7 @@ static void UpdateCamera()
 }
 
 
-static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ColorImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
+static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ColorImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
 {
 	UpdateCamera();
 
@@ -737,13 +738,58 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FImage2DWithView* SceneC
 	vkCmdDispatch(CmdBuffer->CmdBuffer, SceneColorAfterPost->Image.Width / 8, SceneColorAfterPost->Image.Height / 8, 1);
 }
 
+#if TRY_MULTITHREADED
+struct FThreadInterop
+{
+	//volatile bool bStartWork = false;
+	volatile FPrimaryCmdBuffer* ParentCmdBuffer = nullptr;
+	//volatile bool bWorkDone = false;
+	volatile HANDLE StartEvent = INVALID_HANDLE_VALUE;
+	volatile HANDLE DoneEvent = INVALID_HANDLE_VALUE;
+	volatile bool bDoQuit = false;
+};
+volatile FThreadInterop GThreadInterop;
+static HANDLE GThreadHandle = INVALID_HANDLE_VALUE;
+//CRITICAL_SECTION GCS;
+
+DWORD ThreadFunction(void* Param)
+{
+	FCmdBufferMgr ThreadMgr;
+	ThreadMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
+	while (!GThreadInterop.bDoQuit)
+	{
+		WaitForSingleObject(GThreadInterop.StartEvent, INFINITE);
+/*
+		while (!GThreadInterop.bStartWork)
+		{
+			::Sleep(0);
+		}
+*/
+
+		VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
+		FPrimaryCmdBuffer* ParentCmdBuffer = (FPrimaryCmdBuffer*)GThreadInterop.ParentCmdBuffer;
+		auto* CmdBuffer = ThreadMgr.AllocateSecondaryCmdBuffer(ParentCmdBuffer->Fence);
+		CmdBuffer->BeginSecondary(ParentCmdBuffer, VK_NULL_HANDLE);
+		RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
+		CmdBuffer->End();
+
+		//::Sleep(0);
+		//GThreadInterop.bWorkDone = true;
+		ResetEvent(GThreadInterop.StartEvent);
+		SetEvent(GThreadInterop.DoneEvent);
+	}
+
+	return 0;
+}
+#endif
+
 void DoRender()
 {
 	if (GQuitting)
 	{
 		return;
 	}
-	auto* CmdBuffer = GCmdBufferMgr.GetActiveCmdBuffer();
+	auto* CmdBuffer = GCmdBufferMgr.GetActivePrimaryCmdBuffer();
 	CmdBuffer->Begin();
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSceneColor.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -752,7 +798,34 @@ void DoRender()
 
 	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
 	RenderFrame(GDevice.Device, CmdBuffer, GSceneColor.GetWidth(), GSceneColor.GetHeight(), GSceneColor.GetImageView(), GSceneColor.GetFormat(), &GDepthBuffer);
+
+#if TRY_MULTITHREADED
+	{
+		static bool bThread = false;
+		static DWORD ThreadId = 0;
+		if (!bThread)
+		{
+			GThreadHandle = ::CreateThread(nullptr, 0, ThreadFunction, CmdBuffer, 0, &ThreadId);
+			GThreadInterop.StartEvent = ::CreateEventA(nullptr, true, false, "StartEvent");
+			GThreadInterop.DoneEvent = ::CreateEventA(nullptr, true, false, "DoneEvent");
+			bThread = true;
+		}
+
+		GThreadInterop.ParentCmdBuffer = CmdBuffer;
+		ResetEvent(GThreadInterop.DoneEvent);
+		SetEvent(GThreadInterop.StartEvent);
+		//GThreadInterop.bStartWork = true;
+		WaitForSingleObject(GThreadInterop.DoneEvent, INFINITE);
+		//while (!GThreadInterop.bWorkDone)
+		//{
+		//	::Sleep(0);
+		//}
+	}
+
+	CmdBuffer->ExecuteSecondary();
+#else
 	RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
+#endif
 
 	// Blit post into scene color
 	GSwapchain.AcquireNextImage();
@@ -787,6 +860,10 @@ void DoResize(uint32 Width, uint32 Height)
 
 void DoDeinit()
 {
+#if TRY_MULTITHREADED
+	GThreadInterop.bDoQuit = true;
+	WaitForMultipleObjects(1, &GThreadHandle, TRUE, INFINITE);
+#endif
 	GQuitting = true;
 
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
