@@ -120,7 +120,7 @@ VkBool32 FInstance::DebugReportCallback(VkDebugReportFlagsEXT Flags, VkDebugRepo
 			}
 		}
 
-		uint32 Size = strlen(Message) + 100;
+		uint32 Size = (uint32)strlen(Message) + 100;
 		auto* s = new char[Size];
 		snprintf(s, Size - 1, "<VK>: %s\n", Message);
 		::OutputDebugStringA(s);
@@ -293,7 +293,7 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	VkRenderPassCreateInfo RenderPassInfo;
 	MemZero(RenderPassInfo);
 	RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	RenderPassInfo.attachmentCount = CurrentDesc - AttachmentDesc;
+	RenderPassInfo.attachmentCount = (uint32)(CurrentDesc - AttachmentDesc);
 	RenderPassInfo.pAttachments = AttachmentDesc;
 	RenderPassInfo.subpassCount = 1;
 	RenderPassInfo.pSubpasses = &Subpass;
@@ -427,7 +427,7 @@ void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFo
 	VkGraphicsPipelineCreateInfo PipelineInfo;
 	MemZero(PipelineInfo);
 	PipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	PipelineInfo.stageCount = ShaderStages.size();
+	PipelineInfo.stageCount = (uint32)ShaderStages.size();
 	PipelineInfo.pStages = &ShaderStages[0];
 	PipelineInfo.pVertexInputState = &VIInfo;
 	PipelineInfo.pInputAssemblyState = &IAInfo;
@@ -497,7 +497,7 @@ void FMemPage::Release(FMemSubAlloc* SubAlloc)
 			return Left.Begin < Right.Begin;
 		});
 
-		for (uint32 Index = FreeList.size() - 1; Index > 0; --Index)
+		for (uint32 Index = (uint32)FreeList.size() - 1; Index > 0; --Index)
 		{
 			auto& Current = FreeList[Index];
 			auto& Prev = FreeList[Index - 1];

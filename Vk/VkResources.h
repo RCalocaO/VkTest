@@ -494,7 +494,7 @@ struct FPSO
 		VkDescriptorSetLayoutCreateInfo Info;
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		Info.bindingCount = DSBindings.size();
+		Info.bindingCount = (uint32)DSBindings.size();
 		Info.pBindings = DSBindings.empty() ? nullptr : &DSBindings[0];
 		checkVk(vkCreateDescriptorSetLayout(Device, &Info, nullptr, &DSLayout));
 	}
@@ -599,9 +599,9 @@ struct FVertexFormat
 		VkPipelineVertexInputStateCreateInfo VIInfo;
 		MemZero(VIInfo);
 		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		VIInfo.vertexBindingDescriptionCount = VertexBuffers.size();
+		VIInfo.vertexBindingDescriptionCount = (uint32)VertexBuffers.size();
 		VIInfo.pVertexBindingDescriptions = VertexBuffers.empty() ? nullptr : &VertexBuffers[0];
-		VIInfo.vertexAttributeDescriptionCount = VertexAttributes.size();
+		VIInfo.vertexAttributeDescriptionCount = (uint32)VertexAttributes.size();
 		VIInfo.pVertexAttributeDescriptions = VertexAttributes.empty() ? nullptr : &VertexAttributes[0];
 
 		return VIInfo;
@@ -722,7 +722,7 @@ struct FDescriptorPool
 		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		Info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		Info.maxSets = 32768;
-		Info.poolSizeCount = PoolSizes.size();
+		Info.poolSizeCount = (uint32)PoolSizes.size();
 		Info.pPoolSizes = &PoolSizes[0];
 		checkVk(vkCreateDescriptorPool(InDevice, &Info, nullptr, &Pool));
 	}
