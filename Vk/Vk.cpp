@@ -9,6 +9,7 @@
 // 0 no multithreading
 // 1 inside a render pass
 // 2 run post
+#define TRY_MULTITHREADED	0
 
 FVector3 GStepDirection = {0, 0, 0};
 FVector4 GCameraPos = {0, 0, -10, 1};
