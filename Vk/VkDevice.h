@@ -25,7 +25,7 @@ struct FInstance
 		AppInfo.pApplicationName = "Test0";
 		AppInfo.pEngineName = "VkTest";
 		AppInfo.engineVersion = 1;
-		AppInfo.apiVersion = VK_MAKE_VERSION(1, 0, 0);
+		AppInfo.apiVersion = VK_API_VERSION_1_0;
 
 		VkInstanceCreateInfo InstanceInfo;
 		MemZero(InstanceInfo);

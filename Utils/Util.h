@@ -105,6 +105,15 @@ struct FVector3
 		MemZero(New);
 		return New;
 	}
+
+	FVector3 Mul(float f) const
+	{
+		FVector3 V;
+		V.x = x * f;
+		V.y = y * f;
+		V.z = z * f;
+		return V;
+	}
 };
 
 struct FVector4
@@ -123,6 +132,16 @@ struct FVector4
 		FVector4 New;
 		MemZero(New);
 		return New;
+	}
+
+	FVector4 Add(const FVector3& V) const
+	{
+		FVector4 O;
+		O.x = x + V.x;
+		O.y = y + V.y;
+		O.z = z + V.z;
+		O.w = w;
+		return O;
 	}
 };
 

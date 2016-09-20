@@ -193,6 +193,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 
+	case WM_KEYDOWN:
+	case WM_KEYUP:
+		{
+			int UpDown = (message == WM_KEYUP) ? 0 : 1;
+			int Key = LOWORD(wParam);
+			switch (Key)
+			{
+			case VK_UP:
+			case 'W':
+				GStepDirection.z = 1.0f * Key;
+				break;
+			case VK_DOWN:
+			case 'S':
+				GStepDirection.z = -1.0f * Key;
+				break;
+			case VK_LEFT:
+			case 'A':
+				GStepDirection.x = 1.0f * Key;
+				break;
+			case VK_RIGHT:
+			case 'D':
+				GStepDirection.x = -1.0f * Key;
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+
 	case WM_DESTROY:
 		bDestroyed = true;
 		DoDeinit();

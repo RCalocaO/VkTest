@@ -10,6 +10,7 @@ enum class EViewMode
 	Wireframe,
 };
 extern EViewMode GViewMode;
+extern FVector3 GStepDirection;
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height);
 void DoRender();

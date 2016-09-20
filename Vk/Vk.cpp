@@ -7,6 +7,8 @@
 #include "../Meshes/ObjLoader.h"
 
 
+FVector3 GStepDirection = {0, 0, 0};
+FVector4 GCameraPos = {0, 0, -10, 1};
 EViewMode GViewMode = EViewMode::Solid;
 
 static FInstance GInstance;
@@ -592,11 +594,6 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GObjUB.Create(GDevice.Device, &GMemMgr);
 	GIdentityUB.Create(GDevice.Device, &GMemMgr);
 
-	FViewUB& ViewUB = *GViewUB.GetMappedData();
-	ViewUB.View = FMatrix4x4::GetIdentity();
-	ViewUB.View.Values[3 * 4 + 2] = -10;
-	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
-
 	{
 		FObjUB& ObjUB = *GObjUB.GetMappedData();
 		ObjUB.Obj = FMatrix4x4::GetIdentity();
@@ -687,8 +684,22 @@ static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Hei
 	vkCmdSetScissor(CmdBuffer, 0, 1, &Scissor);
 }
 
+static void UpdateCamera()
+{
+	FViewUB& ViewUB = *GViewUB.GetMappedData();
+	ViewUB.View = FMatrix4x4::GetIdentity();
+	//ViewUB.View.Values[3 * 4 + 2] = -10;
+	GCameraPos = GCameraPos.Add(GStepDirection.Mul(0.01f));
+	GStepDirection = {0, 0, 0};
+	ViewUB.View.Rows[3] = GCameraPos;
+	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
+}
+
+
 static void RenderFrame(VkDevice Device, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImageView ColorImageView, VkFormat ColorFormat, FImage2DWithView* DepthBuffer)
 {
+	UpdateCamera();
+
 	FillFloor(CmdBuffer);
 
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());

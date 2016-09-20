@@ -12,34 +12,36 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 	{
 		uint32 NumLayers;
 		checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, nullptr));
-
-		std::vector<VkLayerProperties> InstanceProperties;
-		InstanceProperties.resize(NumLayers);
-
-		checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
-
-		const char* UseValidationLayers[] =
+		if (NumLayers > 0)
 		{
-			"VK_LAYER_LUNARG_api_dump",
-			"VK_LAYER_LUNARG_standard_validation",
-			"VK_LAYER_LUNARG_image",
-			"VK_LAYER_LUNARG_object_tracker",
-			"VK_LAYER_LUNARG_parameter_validation",
-			"VK_LAYER_LUNARG_screenshot",
-			"VK_LAYER_LUNARG_swapchain",
-			"VK_LAYER_GOOGLE_threading",
-			"VK_LAYER_GOOGLE_unique_objects",
-		};
+			std::vector<VkLayerProperties> InstanceProperties;
+			InstanceProperties.resize(NumLayers);
 
-		for (auto* DesiredLayer : UseValidationLayers)
-		{
-			for (auto& Prop : InstanceProperties)
+			checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
+
+			const char* UseValidationLayers[] =
 			{
-				if (!strcmp(Prop.layerName, DesiredLayer))
+				"VK_LAYER_LUNARG_api_dump",
+				"VK_LAYER_LUNARG_standard_validation",
+				"VK_LAYER_LUNARG_image",
+				"VK_LAYER_LUNARG_object_tracker",
+				"VK_LAYER_LUNARG_parameter_validation",
+				"VK_LAYER_LUNARG_screenshot",
+				"VK_LAYER_LUNARG_swapchain",
+				"VK_LAYER_GOOGLE_threading",
+				"VK_LAYER_GOOGLE_unique_objects",
+			};
+
+			for (auto* DesiredLayer : UseValidationLayers)
+			{
+				for (auto& Prop : InstanceProperties)
 				{
-					OutLayers.push_back(DesiredLayer);
-					// Should probably remove it from InstanceProperties array...
-					break;
+					if (!strcmp(Prop.layerName, DesiredLayer))
+					{
+						OutLayers.push_back(DesiredLayer);
+						// Should probably remove it from InstanceProperties array...
+						break;
+					}
 				}
 			}
 		}
