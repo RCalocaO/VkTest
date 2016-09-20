@@ -514,7 +514,7 @@ void FMemPage::Release(FMemSubAlloc* SubAlloc)
 	}
 }
 
-void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer)
+void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Framebuffer, bool bHasSecondary)
 {
 	check(State == EState::Begun);
 
@@ -531,7 +531,7 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 	BeginInfo.renderArea = { 0, 0, Framebuffer.Width, Framebuffer.Height };
 	BeginInfo.clearValueCount = 2;
 	BeginInfo.pClearValues = ClearValues;
-	vkCmdBeginRenderPass(CmdBuffer, &BeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(CmdBuffer, &BeginInfo, bHasSecondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
 
 	State = EState::InsideRenderPass;
 }

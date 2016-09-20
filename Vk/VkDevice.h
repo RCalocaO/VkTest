@@ -243,7 +243,7 @@ struct FCmdBuffer
 	};
 	EState State = EState::ReadyForBegin;
 
-	void Destroy(VkDevice Device, VkCommandPool Pool)
+	virtual void Destroy(VkDevice Device, VkCommandPool Pool)
 	{
 		if (State == EState::Submitted)
 		{
@@ -255,12 +255,11 @@ struct FCmdBuffer
 			}
 			RefreshState();
 		}
-		Fence->Destroy(Device);
 		vkFreeCommandBuffers(Device, Pool, 1, &CmdBuffer);
 		CmdBuffer = VK_NULL_HANDLE;
 	}
 
-	void BeginRenderPass(VkRenderPass RenderPass, const struct FFramebuffer& Framebuffer);
+	void BeginRenderPass(VkRenderPass RenderPass, const struct FFramebuffer& Framebuffer, bool bHasSecondary);
 
 	void EndRenderPass()
 	{
@@ -352,6 +351,12 @@ struct FPrimaryCmdBuffer : public FCmdBuffer
 		}
 	}
 
+	virtual void Destroy(VkDevice Device, VkCommandPool Pool) override
+	{
+		FCmdBuffer::Destroy(Device, Pool);
+		Fence->Destroy(Device);
+	}
+
 	std::list<struct FSecondaryCmdBuffer*> Secondary;
 	std::vector<VkCommandBuffer> SecondaryList;
 };
@@ -365,7 +370,6 @@ struct FSecondaryCmdBuffer : public FCmdBuffer
 		VkCommandBufferInheritanceInfo Inheritance;
 		MemZero(Inheritance);
 		Inheritance.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		//VkRenderPass                     renderPass;
 		//uint32_t                         subpass;
 		//VkFramebuffer                    framebuffer;
 		//VkBool32                         occlusionQueryEnable;
@@ -379,6 +383,7 @@ struct FSecondaryCmdBuffer : public FCmdBuffer
 		if (RenderPass != VK_NULL_HANDLE)
 		{
 			Info.flags |= VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+			Inheritance.renderPass = RenderPass;
 		}
 		Info.pInheritanceInfo = &Inheritance;
 		checkVk(vkBeginCommandBuffer(CmdBuffer, &Info));
