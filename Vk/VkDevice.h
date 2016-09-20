@@ -363,7 +363,7 @@ struct FPrimaryCmdBuffer : public FCmdBuffer
 
 struct FSecondaryCmdBuffer : public FCmdBuffer
 {
-	void BeginSecondary(FPrimaryCmdBuffer* ParentCmdBuffer, VkRenderPass RenderPass)
+	void BeginSecondary(FPrimaryCmdBuffer* ParentCmdBuffer, VkRenderPass RenderPass, VkFramebuffer Framebuffer)
 	{
 		check(State == EState::ReadyForBegin);
 
@@ -371,11 +371,9 @@ struct FSecondaryCmdBuffer : public FCmdBuffer
 		MemZero(Inheritance);
 		Inheritance.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
 		//uint32_t                         subpass;
-		//VkFramebuffer                    framebuffer;
 		//VkBool32                         occlusionQueryEnable;
 		//VkQueryControlFlags              queryFlags;
 		//VkQueryPipelineStatisticFlags    pipelineStatistics;
-
 		VkCommandBufferBeginInfo Info;
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -384,6 +382,11 @@ struct FSecondaryCmdBuffer : public FCmdBuffer
 		{
 			Info.flags |= VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
 			Inheritance.renderPass = RenderPass;
+			Inheritance.framebuffer = Framebuffer;
+		}
+		else
+		{
+			check(Framebuffer == VK_NULL_HANDLE);
 		}
 		Info.pInheritanceInfo = &Inheritance;
 		checkVk(vkBeginCommandBuffer(CmdBuffer, &Info));

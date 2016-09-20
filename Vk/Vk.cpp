@@ -56,23 +56,32 @@ static FImage2DWithView GDepthBuffer;
 static FImage2DWithView GHeightMap;
 static FSampler GSampler;
 
-#if TRY_MULTITHREADED
-struct FThreadInterop
+#if TRY_MULTITHREADED > 0
+struct FThread
 {
-	//volatile bool bStartWork = false;
 	volatile FPrimaryCmdBuffer* ParentCmdBuffer = nullptr;
-	//volatile bool bWorkDone = false;
 	volatile HANDLE StartEvent = INVALID_HANDLE_VALUE;
 	volatile HANDLE DoneEvent = INVALID_HANDLE_VALUE;
 	volatile bool bDoQuit = false;
-	int32 Width = 0;
-	int32 Height = 0;
-	FRenderPass* RenderPass = nullptr;
-};
-volatile FThreadInterop GThreadInterop;
+	volatile int32 Width = 0;
+	volatile int32 Height = 0;
+	volatile FRenderPass* RenderPass = nullptr;
+	volatile FFramebuffer* Framebuffer = nullptr;
 
-DWORD ThreadFunction(void* Param);
-static HANDLE GThreadHandle = INVALID_HANDLE_VALUE;
+	void Create()
+	{
+		ThreadHandle = ::CreateThread(nullptr, 0, ThreadFunction, this, 0, &ThreadId);
+		StartEvent = ::CreateEventA(nullptr, true, false, "StartEvent");
+		DoneEvent = ::CreateEventA(nullptr, true, false, "DoneEvent");
+	}
+
+	DWORD ThreadId = 0;
+	HANDLE ThreadHandle = INVALID_HANDLE_VALUE;
+
+	static DWORD ThreadFunction(void*);
+};
+FThread GThread;
+
 #endif
 
 
@@ -644,6 +653,10 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		CmdBuffer->WaitForFence();
 	}
 
+#if TRY_MULTITHREADED
+	GThread.Create();
+#endif
+
 	return true;
 }
 
@@ -735,28 +748,19 @@ static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, uint32 Wi
 
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
 	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height);
-	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED);
+	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED > 0);
 
 #if TRY_MULTITHREADED
 	{
-		static bool bThread = false;
-		static DWORD ThreadId = 0;
-		if (!bThread)
-		{
-			GThreadHandle = ::CreateThread(nullptr, 0, ThreadFunction, CmdBuffer, 0, &ThreadId);
-			GThreadInterop.StartEvent = ::CreateEventA(nullptr, true, false, "StartEvent");
-			GThreadInterop.DoneEvent = ::CreateEventA(nullptr, true, false, "DoneEvent");
-			bThread = true;
-		}
-
-		GThreadInterop.ParentCmdBuffer = CmdBuffer;
-		GThreadInterop.Width = Width;
-		GThreadInterop.Height = Height;
-		GThreadInterop.RenderPass = RenderPass;
-		ResetEvent(GThreadInterop.DoneEvent);
-		SetEvent(GThreadInterop.StartEvent);
+		GThread.ParentCmdBuffer = CmdBuffer;
+		GThread.Width = Width;
+		GThread.Height = Height;
+		GThread.RenderPass = RenderPass;
+		GThread.Framebuffer = Framebuffer;
+		ResetEvent(GThread.DoneEvent);
+		SetEvent(GThread.StartEvent);
 		//GThreadInterop.bStartWork = true;
-		WaitForSingleObject(GThreadInterop.DoneEvent, INFINITE);
+		WaitForSingleObject(GThread.DoneEvent, INFINITE);
 		//while (!GThreadInterop.bWorkDone)
 		//{
 		//	::Sleep(0);
@@ -793,32 +797,34 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FImage2DWithView* SceneC
 }
 
 #if TRY_MULTITHREADED
-DWORD ThreadFunction(void* Param)
+DWORD FThread::ThreadFunction(void* Param)
 {
+	auto* This = (FThread*)Param;
+
 	FCmdBufferMgr ThreadMgr;
 	ThreadMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
-	while (!GThreadInterop.bDoQuit)
+	while (!This->bDoQuit)
 	{
-		WaitForSingleObject(GThreadInterop.StartEvent, INFINITE);
-		if (GThreadInterop.bDoQuit)
+		WaitForSingleObject(This->StartEvent, INFINITE);
+		if (This->bDoQuit)
 		{
 			break;
 		}
 
 		VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
-		FPrimaryCmdBuffer* ParentCmdBuffer = (FPrimaryCmdBuffer*)GThreadInterop.ParentCmdBuffer;
+		FPrimaryCmdBuffer* ParentCmdBuffer = (FPrimaryCmdBuffer*)This->ParentCmdBuffer;
 		auto* CmdBuffer = ThreadMgr.AllocateSecondaryCmdBuffer(ParentCmdBuffer->Fence);
-		CmdBuffer->BeginSecondary(ParentCmdBuffer, GThreadInterop.RenderPass->RenderPass);
+		CmdBuffer->BeginSecondary(ParentCmdBuffer, This->RenderPass->RenderPass, This->Framebuffer->Framebuffer);
 		//RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
 
-		InternalRenderFrame(GDevice.Device, GThreadInterop.RenderPass, CmdBuffer, GThreadInterop.Width, GThreadInterop.Height);
+		InternalRenderFrame(GDevice.Device, (FRenderPass*)This->RenderPass, CmdBuffer, This->Width, This->Height);
 
 		CmdBuffer->End();
 
 		//::Sleep(0);
-		//GThreadInterop.bWorkDone = true;
-		ResetEvent(GThreadInterop.StartEvent);
-		SetEvent(GThreadInterop.DoneEvent);
+		//This->bWorkDone = true;
+		ResetEvent(This->StartEvent);
+		SetEvent(This->DoneEvent);
 	}
 
 	ThreadMgr.Destroy();
@@ -879,9 +885,9 @@ void DoDeinit()
 {
 	checkVk(vkDeviceWaitIdle(GDevice.Device));
 #if TRY_MULTITHREADED
-	GThreadInterop.bDoQuit = true;
-	SetEvent(GThreadInterop.StartEvent);
-	WaitForMultipleObjects(1, &GThreadHandle, TRUE, INFINITE);
+	GThread.bDoQuit = true;
+	SetEvent(GThread.StartEvent);
+	WaitForMultipleObjects(1, &GThread.ThreadHandle, TRUE, INFINITE);
 #endif
 	GQuitting = true;
 
