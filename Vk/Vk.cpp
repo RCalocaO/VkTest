@@ -81,7 +81,7 @@ struct FThread
 	DWORD ThreadId = 0;
 	HANDLE ThreadHandle = INVALID_HANDLE_VALUE;
 
-	static DWORD ThreadFunction(void*);
+	static DWORD __stdcall ThreadFunction(void*);
 };
 FThread GThread;
 
@@ -793,7 +793,7 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FImage2DWithView* SceneC
 }
 
 #if TRY_MULTITHREADED
-DWORD FThread::ThreadFunction(void* Param)
+DWORD __stdcall FThread::ThreadFunction(void* Param)
 {
 	auto* This = (FThread*)Param;
 
