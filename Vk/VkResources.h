@@ -137,7 +137,7 @@ struct FUniformBuffer
 
 struct FImage
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits Samples)
 	{
 		Device = InDevice;
 		Width = InWidth;
@@ -155,7 +155,7 @@ struct FImage
 		ImageInfo.extent.depth = 1;
 		ImageInfo.mipLevels = NumMips;
 		ImageInfo.arrayLayers = 1;
-		ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		ImageInfo.samples = Samples;
 		ImageInfo.tiling = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0 ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
 		ImageInfo.usage = UsageFlags;
 		ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -362,9 +362,9 @@ inline VkImageAspectFlags GetImageAspectFlags(VkFormat Format)
 
 struct FImage2DWithView
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
 	{
-		Image.Create(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips);
+		Image.Create(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples);
 		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format));
 	}
 
@@ -791,14 +791,17 @@ class FRenderPassLayout
 public:
 	FRenderPassLayout() {}
 
-	FRenderPassLayout(uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkFormat* InColorFormats, VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED)
+	FRenderPassLayout(uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkFormat* InColorFormats,
+		VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT)
 		: Width(InWidth)
 		, Height(InHeight)
 		, NumColorTargets(InNumColorTargets)
 		, DepthStencilFormat(InDepthStencilFormat)
+		, NumSamples(InNumSamples)
 	{
 		Hash = Width | (Height << 16) | ((uint64)NumColorTargets << (uint64)33);
 		Hash |= ((uint64)DepthStencilFormat << (uint64)56);
+		Hash |= (uint64) InNumSamples << (uint64)50;
 
 		MemZero(ColorFormats);
 		uint32 ColorHash = 0;
@@ -816,6 +819,11 @@ public:
 		return Hash;
 	}
 
+	inline VkSampleCountFlagBits GetNumSamples() const
+	{
+		return NumSamples;
+	}
+
 	enum
 	{
 		MAX_COLOR_ATTACHMENTS = 8
@@ -827,6 +835,7 @@ protected:
 	uint32 NumColorTargets = 0;
 	VkFormat ColorFormats[MAX_COLOR_ATTACHMENTS];
 	VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED;	// Undefined means no Depth/Stencil
+	VkSampleCountFlagBits NumSamples = VK_SAMPLE_COUNT_1_BIT;
 
 	uint64 Hash = 0;
 
@@ -838,7 +847,6 @@ struct FRenderPass
 {
 	VkRenderPass RenderPass = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
-	FRenderPassLayout Layout;
 
 	void Create(VkDevice InDevice, const FRenderPassLayout& InLayout);
 
@@ -847,6 +855,14 @@ struct FRenderPass
 		vkDestroyRenderPass(Device, RenderPass, nullptr);
 		RenderPass = VK_NULL_HANDLE;
 	}
+
+	const FRenderPassLayout& GetLayout() const
+	{
+		return Layout;
+	}
+
+protected:
+	FRenderPassLayout Layout;
 };
 
 struct FGfxPipeline : public FBasePipeline
@@ -865,7 +881,7 @@ struct FGfxPipeline : public FBasePipeline
 	VkPipelineDynamicStateCreateInfo DynamicInfo;
 
 	FGfxPipeline();
-	void Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, VkRenderPass RenderPass);	
+	void Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, FRenderPass* RenderPass);	
 };
 
 struct FComputePipeline : public FBasePipeline

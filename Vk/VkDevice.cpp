@@ -248,7 +248,7 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	for (Index = 0; Index < Layout.NumColorTargets; ++Index)
 	{
 		CurrentDesc->format = Layout.ColorFormats[Index];
-		CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
+		CurrentDesc->samples = Layout.NumSamples;
 		CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -402,7 +402,7 @@ FGfxPipeline::FGfxPipeline()
 	DynamicInfo.pDynamicStates = Dynamic;
 }
 
-void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, VkRenderPass RenderPass)
+void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, FRenderPass* RenderPass)
 {
 	std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 	PSO->SetupShaderStages(ShaderStages);
@@ -423,6 +423,8 @@ void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFo
 	//Viewport.minDepth = 0;
 	//Viewport.maxDepth = 1;
 
+	MSInfo.rasterizationSamples = RenderPass->GetLayout().GetNumSamples();
+
 	//scissors.offset = { 0, 0 };
 	Scissor.extent = { Width, Height };
 
@@ -441,7 +443,7 @@ void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFo
 	PipelineInfo.pColorBlendState = &CBInfo;
 	PipelineInfo.pDynamicState = &DynamicInfo;
 	PipelineInfo.layout = PipelineLayout;
-	PipelineInfo.renderPass = RenderPass;
+	PipelineInfo.renderPass = RenderPass->RenderPass;
 	//PipelineInfo.subpass = 0;
 	//PipelineInfo.basePipelineHandle = NULL;
 	//PipelineInfo.basePipelineIndex = 0;

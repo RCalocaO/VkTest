@@ -54,6 +54,7 @@ static FUniformBuffer<FObjUB> GObjUB;
 static FUniformBuffer<FObjUB> GIdentityUB;
 
 static FImage2DWithView GCheckerboardTexture;
+static FImage2DWithView GSceneColorMSAA;
 static FImage2DWithView GSceneColor;
 static FImage2DWithView GSceneColorAfterPost;
 static FImage2DWithView GDepthBuffer;
@@ -252,9 +253,9 @@ struct FObjectCache
 		return NewFramebuffer;
 	}
 
-	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, VkRenderPass RenderPass, bool bWireframe = false)
+	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, FRenderPass* RenderPass, bool bWireframe = false)
 	{
-		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass, bWireframe);
+		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass->RenderPass, bWireframe);
 		auto Found = GfxPipelines.find(Layout);
 		if (Found != GfxPipelines.end())
 		{
@@ -282,9 +283,9 @@ struct FObjectCache
 		return NewPipeline;
 	}
 
-	FRenderPass* GetOrCreateRenderPass(uint32 Width, uint32 Height, uint32 NumColorTargets, VkFormat* ColorFormats, VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED)
+	FRenderPass* GetOrCreateRenderPass(uint32 Width, uint32 Height, uint32 NumColorTargets, VkFormat* ColorFormats, VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT)
 	{
-		FRenderPassLayout Layout(Width, Height, NumColorTargets, ColorFormats, DepthStencilFormat);
+		FRenderPassLayout Layout(Width, Height, NumColorTargets, ColorFormats, DepthStencilFormat, InNumSamples);
 		auto LayoutHash = Layout.GetHash();
 		auto Found = RenderPasses.find(LayoutHash);
 		if (Found != RenderPasses.end())
@@ -643,6 +644,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	SetupFloor();
 
 	GSceneColorAfterPost.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
+	GSceneColorMSAA.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1, VK_SAMPLE_COUNT_4_BIT);
 	GSceneColor.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 	GDepthBuffer.Create(GDevice.Device, GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr);
 
@@ -735,7 +737,7 @@ static void UpdateCamera()
 
 static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height)
 {
-	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass->RenderPass, GViewMode == EViewMode::Wireframe);
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass, GViewMode == EViewMode::Wireframe);
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);
@@ -750,8 +752,13 @@ static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, uint32 Wi
 
 	FillFloor(CmdBuffer);
 
+#if 0
+	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat(), VK_SAMPLE_COUNT_4_BIT);
+	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, GSceneColorMSAA.GetImage(), DepthBuffer->GetImageView(), Width, Height);
+#else
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Width, Height, 1, &ColorFormat, DepthBuffer->GetFormat());
 	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorImageView, DepthBuffer->GetImageView(), Width, Height);
+#endif
 	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED == 1);
 #if TRY_MULTITHREADED == 1
 	{
@@ -921,6 +928,7 @@ void DoDeinit()
 
 	GDepthBuffer.Destroy();
 	GSceneColor.Destroy();
+	GSceneColorMSAA.Destroy();
 	GCheckerboardTexture.Destroy();
 	GHeightMap.Destroy();
 
