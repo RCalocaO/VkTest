@@ -187,6 +187,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case '2':
 				GViewMode = EViewMode::Solid;
 				break;
+			case 'P':
+			case 'p':
+				GDoPost = !GDoPost;
+				break;
 			default:
 				break;
 			}

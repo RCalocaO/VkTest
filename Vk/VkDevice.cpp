@@ -332,8 +332,8 @@ FGfxPipeline::FGfxPipeline()
 	//RSInfo.depthClampEnable = VK_FALSE;
 	//RSInfo.rasterizerDiscardEnable = VK_FALSE;
 	RSInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	RSInfo.cullMode = VK_CULL_MODE_NONE;
-	RSInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	RSInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	RSInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	//RSInfo.depthBiasEnable = VK_FALSE;
 	//RSInfo.depthBiasConstantFactor = 0;
 	//RSInfo.depthBiasClamp = 0;
@@ -354,8 +354,8 @@ FGfxPipeline::FGfxPipeline()
 	Stencil.passOp = VK_STENCIL_OP_KEEP;
 	Stencil.depthFailOp = VK_STENCIL_OP_KEEP;
 	Stencil.compareOp = VK_COMPARE_OP_ALWAYS;
-	//Stencil.compareMask = 0;
-	//Stencil.writeMask = 0;
+	Stencil.compareMask = 0xff;
+	Stencil.writeMask = 0xff;
 	//Stencil.reference = 0;
 
 	MemZero(DSInfo);
@@ -366,7 +366,9 @@ FGfxPipeline::FGfxPipeline()
 	//DSInfo.depthBoundsTestEnable = VK_FALSE;
 	//DSInfo.stencilTestEnable = VK_FALSE;
 	DSInfo.front = Stencil;
+	//DSInfo.front.passOp = VK_STENCIL_OP_INCREMENT_AND_WRAP;
 	DSInfo.back = Stencil;
+	//DSInfo.back.passOp = VK_STENCIL_OP_DECREMENT_AND_WRAP;
 	//DSInfo.minDepthBounds = 0;
 	//DSInfo.maxDepthBounds = 0;
 

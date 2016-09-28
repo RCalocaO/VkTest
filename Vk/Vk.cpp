@@ -14,6 +14,7 @@
 FVector3 GStepDirection = {0, 0, 0};
 FVector4 GCameraPos = {0, 0, -10, 1};
 EViewMode GViewMode = EViewMode::Solid;
+bool GDoPost = true;
 
 static FInstance GInstance;
 static FDevice GDevice;
@@ -847,21 +848,24 @@ void DoRender()
 
 	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
 	RenderFrame(GDevice.Device, CmdBuffer, GSceneColor.GetWidth(), GSceneColor.GetHeight(), GSceneColor.GetImageView(), GSceneColor.GetFormat(), &GDepthBuffer);
-#if TRY_MULTITHREADED == 2
+	if (GDoPost)
 	{
-		GThread.ParentCmdBuffer = CmdBuffer;
-		GThread.Width = 0;
-		GThread.Height = 0;
-		GThread.RenderPass = nullptr;
-		GThread.Framebuffer = nullptr;
-		ResetEvent(GThread.DoneEvent);
-		SetEvent(GThread.StartEvent);
-		WaitForSingleObject(GThread.DoneEvent, INFINITE);
-		CmdBuffer->ExecuteSecondary();
-	}
+#if TRY_MULTITHREADED == 2
+		{
+			GThread.ParentCmdBuffer = CmdBuffer;
+			GThread.Width = 0;
+			GThread.Height = 0;
+			GThread.RenderPass = nullptr;
+			GThread.Framebuffer = nullptr;
+			ResetEvent(GThread.DoneEvent);
+			SetEvent(GThread.StartEvent);
+			WaitForSingleObject(GThread.DoneEvent, INFINITE);
+			CmdBuffer->ExecuteSecondary();
+}
 #else
-	RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
+		RenderPost(GDevice.Device, CmdBuffer, &GSceneColor, &GSceneColorAfterPost);
 #endif
+	}
 
 	// Blit post into scene color
 	GSwapchain.AcquireNextImage();
@@ -870,7 +874,7 @@ void DoRender()
 	{
 		uint32 Width = min(GSwapchain.GetWidth(), GSceneColorAfterPost.GetWidth());
 		uint32 Height = min(GSwapchain.GetHeight(), GSceneColorAfterPost.GetHeight());
-		BlitColorImage(CmdBuffer, Width, Height, GSceneColorAfterPost.GetImage(), VK_IMAGE_LAYOUT_GENERAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
+		BlitColorImage(CmdBuffer, Width, Height, GDoPost ? GSceneColorAfterPost.GetImage() : GSceneColor.GetImage(), VK_IMAGE_LAYOUT_GENERAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
 	}
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
