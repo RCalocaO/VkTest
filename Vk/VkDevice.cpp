@@ -21,7 +21,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 
 			const char* UseValidationLayers[] =
 			{
-				"VK_LAYER_LUNARG_api_dump",
+				//"VK_LAYER_LUNARG_api_dump",
 				"VK_LAYER_LUNARG_standard_validation",
 				"VK_LAYER_LUNARG_image",
 				"VK_LAYER_LUNARG_object_tracker",
@@ -30,6 +30,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 				"VK_LAYER_LUNARG_swapchain",
 				"VK_LAYER_GOOGLE_threading",
 				"VK_LAYER_GOOGLE_unique_objects",
+				"VK_LAYER_RENDERDOC_Capture",
 			};
 
 			for (auto* DesiredLayer : UseValidationLayers)
@@ -237,9 +238,14 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	Device = InDevice;
 	Layout = InLayout;
 
-	VkAttachmentDescription AttachmentDesc[2 * (1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS)];
-	VkAttachmentReference AttachmentRef[2 * (1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS)];
-	VkAttachmentReference ResolveRef;
+	std::vector<VkAttachmentDescription> Descriptions;
+	std::vector<VkAttachmentReference> AttachmentReferences;
+	std::vector<VkAttachmentReference> ResolveReferences;
+	int32 DepthReferenceIndex = -1;
+	/*
+	VkAttachmentDescription AttachmentDesc[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
+	VkAttachmentReference AttachmentRef[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
+	VkAttachmentReference ResolveRef[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
 	MemZero(AttachmentDesc);
 	MemZero(AttachmentRef);
 	MemZero(ResolveRef);
@@ -247,23 +253,6 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	VkAttachmentDescription* CurrentDesc = AttachmentDesc;
 	VkAttachmentReference* CurrentRef = AttachmentRef;
 	uint32 Index = 0;
-	for (Index = 0; Index < Layout.NumColorTargets; ++Index)
-	{
-		CurrentDesc->format = Layout.ColorFormats[Index];
-		CurrentDesc->samples = Layout.NumSamples;
-		CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		CurrentRef->attachment = Index;
-		CurrentRef->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		++CurrentDesc;
-		++CurrentRef;
-	}
 
 	VkAttachmentReference* DepthRef = nullptr;
 	if (Layout.DepthStencilFormat != VK_FORMAT_UNDEFINED)
@@ -282,8 +271,74 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 		CurrentRef->attachment = Index;
 		CurrentRef->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		++CurrentRef;
+		++Index;
+	}
+*/
+	for (uint32 Index = 0; Index < Layout.NumColorTargets; ++Index)
+	{
+		VkAttachmentDescription Desc;
+		MemZero(Desc);
+		Desc.format = Layout.ColorFormats[Index];
+		Desc.samples = Layout.NumSamples;
+		Desc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		Desc.storeOp = (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED) ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
+		Desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		Desc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		Descriptions.push_back(Desc);
+
+		VkAttachmentReference Reference;
+		MemZero(Reference);
+		Reference.attachment = (uint32)Descriptions.size() - 1;
+		Reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		AttachmentReferences.push_back(Reference);
 	}
 
+	if (Layout.DepthStencilFormat != VK_FORMAT_UNDEFINED)
+	{
+		VkAttachmentDescription Desc;
+		MemZero(Desc);
+		Desc.format = Layout.DepthStencilFormat;
+		Desc.samples = Layout.NumSamples;
+		Desc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		Desc.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Desc.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		Desc.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		Descriptions.push_back(Desc);
+
+		DepthReferenceIndex = (int32)AttachmentReferences.size();
+		VkAttachmentReference Reference;
+		MemZero(Reference);
+		Reference.attachment = (uint32)Descriptions.size() - 1;
+		Reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		AttachmentReferences.push_back(Reference);
+	}
+
+	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
+	{
+		VkAttachmentDescription Desc;
+		MemZero(Desc);
+		Desc.format = Layout.ColorFormats[0];
+		Desc.samples = VK_SAMPLE_COUNT_1_BIT;
+		Desc.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		Desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		Desc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		Descriptions.push_back(Desc);
+
+		VkAttachmentReference Reference;
+		MemZero(Reference);
+		Reference.attachment = (uint32)Descriptions.size() - 1;
+		Reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		ResolveReferences.push_back(Reference);
+	}
+
+/*
 	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
 	{
 		CurrentDesc->format = Layout.ResolveFormat;
@@ -301,24 +356,25 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 		++CurrentDesc;
 		++Index;
 	}
-
+*/
 	VkSubpassDescription Subpass;
 	MemZero(Subpass);
 	Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	Subpass.colorAttachmentCount = Index;
-	Subpass.pColorAttachments = &AttachmentRef[0];
-	Subpass.pDepthStencilAttachment = DepthRef;
+	Subpass.colorAttachmentCount = Layout.NumColorTargets;
+	Subpass.pColorAttachments = &AttachmentReferences[0];
+	Subpass.pResolveAttachments = (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED) ? &ResolveReferences[0] : nullptr;
+	Subpass.pDepthStencilAttachment = DepthReferenceIndex != -1 ? &AttachmentReferences[DepthReferenceIndex] : nullptr;
 
 	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
 	{
-		Subpass.pResolveAttachments = &ResolveRef;
+		//Subpass.pResolveAttachments = &ResolveRef;
 	}
 
 	VkRenderPassCreateInfo RenderPassInfo;
 	MemZero(RenderPassInfo);
 	RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	RenderPassInfo.attachmentCount = (uint32)(CurrentDesc - AttachmentDesc);
-	RenderPassInfo.pAttachments = AttachmentDesc;
+	RenderPassInfo.attachmentCount = (uint32)Descriptions.size();
+	RenderPassInfo.pAttachments = &Descriptions[0];
 	RenderPassInfo.subpassCount = 1;
 	RenderPassInfo.pSubpasses = &Subpass;
 
