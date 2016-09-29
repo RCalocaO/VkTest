@@ -137,13 +137,14 @@ struct FUniformBuffer
 
 struct FImage
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits Samples)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits InSamples)
 	{
 		Device = InDevice;
 		Width = InWidth;
 		Height = InHeight;
 		NumMips = InNumMips;
 		Format = InFormat;
+		Samples = InSamples;
 
 		VkImageCreateInfo ImageInfo;
 		MemZero(ImageInfo);
@@ -192,6 +193,7 @@ struct FImage
 	uint32 Height = 0;
 	uint32 NumMips = 0;
 	VkFormat Format = VK_FORMAT_UNDEFINED;
+	VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT;
 	VkMemoryRequirements Reqs;
 	FMemSubAlloc* SubAlloc = nullptr;
 };

@@ -83,7 +83,7 @@ VkBool32 FInstance::DebugReportCallback(VkDebugReportFlagsEXT Flags, VkDebugRepo
 	if (Flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
 	{
 		char s[2048];
-		sprintf_s(s, "<VK>Error: %s\n", Message);
+		sprintf_s(s, "<VK>Error[%s:%d] %s\n", LayerPrefix, MessageCode, Message);
 		::OutputDebugStringA(s);
 		check(0);
 		++n;
