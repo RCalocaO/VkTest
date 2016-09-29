@@ -794,12 +794,13 @@ public:
 	FRenderPassLayout() {}
 
 	FRenderPassLayout(uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkFormat* InColorFormats,
-		VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT)
+		VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT, VkFormat InResolveFormat = VK_FORMAT_UNDEFINED)
 		: Width(InWidth)
 		, Height(InHeight)
 		, NumColorTargets(InNumColorTargets)
 		, DepthStencilFormat(InDepthStencilFormat)
 		, NumSamples(InNumSamples)
+		, ResolveFormat(InResolveFormat)
 	{
 		Hash = Width | (Height << 16) | ((uint64)NumColorTargets << (uint64)33);
 		Hash |= ((uint64)DepthStencilFormat << (uint64)56);
@@ -814,6 +815,7 @@ public:
 		}
 
 		Hash ^= ((uint64)ColorHash << (uint64)40);
+		Hash ^= ((uint64)ResolveFormat << (uint64)42);
 	}
 
 	inline uint64 GetHash() const
@@ -838,6 +840,7 @@ protected:
 	VkFormat ColorFormats[MAX_COLOR_ATTACHMENTS];
 	VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED;	// Undefined means no Depth/Stencil
 	VkSampleCountFlagBits NumSamples = VK_SAMPLE_COUNT_1_BIT;
+	VkFormat ResolveFormat = VK_FORMAT_UNDEFINED;
 
 	uint64 Hash = 0;
 

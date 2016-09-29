@@ -237,10 +237,12 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	Device = InDevice;
 	Layout = InLayout;
 
-	VkAttachmentDescription AttachmentDesc[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
-	VkAttachmentReference AttachmentRef[1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
+	VkAttachmentDescription AttachmentDesc[2 * (1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS)];
+	VkAttachmentReference AttachmentRef[2 * (1 + FRenderPassLayout::MAX_COLOR_ATTACHMENTS)];
+	VkAttachmentReference ResolveRef;
 	MemZero(AttachmentDesc);
 	MemZero(AttachmentRef);
+	MemZero(ResolveRef);
 
 	VkAttachmentDescription* CurrentDesc = AttachmentDesc;
 	VkAttachmentReference* CurrentRef = AttachmentRef;
@@ -282,6 +284,23 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 		++CurrentRef;
 	}
 
+	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
+	{
+		CurrentDesc->format = Layout.ResolveFormat;
+		CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
+		CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		ResolveRef.attachment = Index;
+		ResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		++CurrentDesc;
+		++Index;
+	}
 
 	VkSubpassDescription Subpass;
 	MemZero(Subpass);
@@ -289,6 +308,11 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	Subpass.colorAttachmentCount = Index;
 	Subpass.pColorAttachments = &AttachmentRef[0];
 	Subpass.pDepthStencilAttachment = DepthRef;
+
+	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
+	{
+		Subpass.pResolveAttachments = &ResolveRef;
+	}
 
 	VkRenderPassCreateInfo RenderPassInfo;
 	MemZero(RenderPassInfo);
