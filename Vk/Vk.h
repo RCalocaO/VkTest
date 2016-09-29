@@ -9,9 +9,18 @@ enum class EViewMode
 	Solid,
 	Wireframe,
 };
-extern EViewMode GViewMode;
-extern bool GDoPost;
-extern FVector3 GStepDirection;
+
+struct FControl
+{
+	FVector3 StepDirection;
+	FVector4 CameraPos;
+	EViewMode ViewMode;
+	bool DoPost;
+	bool DoMSAA;
+
+	FControl();
+};
+extern FControl GRequestControl;
 
 bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height);
 void DoRender();

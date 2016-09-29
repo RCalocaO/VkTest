@@ -182,14 +182,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			switch (Key)
 			{
 			case '1':
-				GViewMode = EViewMode::Wireframe;
+				GRequestControl.ViewMode = EViewMode::Wireframe;
 				break;
 			case '2':
-				GViewMode = EViewMode::Solid;
+				GRequestControl.ViewMode = EViewMode::Solid;
 				break;
 			case 'P':
 			case 'p':
-				GDoPost = !GDoPost;
+				GRequestControl.DoPost = !GRequestControl.DoPost;
+				break;
+			case 'M':
+			case 'm':
+				GRequestControl.DoMSAA = !GRequestControl.DoMSAA;
 				break;
 			default:
 				break;
@@ -206,19 +210,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 			case VK_UP:
 			case 'W':
-				GStepDirection.z = 1.0f * Key;
+				GRequestControl.StepDirection.z = 1.0f * Key;
 				break;
 			case VK_DOWN:
 			case 'S':
-				GStepDirection.z = -1.0f * Key;
+				GRequestControl.StepDirection.z = -1.0f * Key;
 				break;
 			case VK_LEFT:
 			case 'A':
-				GStepDirection.x = 1.0f * Key;
+				GRequestControl.StepDirection.x = 1.0f * Key;
 				break;
 			case VK_RIGHT:
 			case 'D':
-				GStepDirection.x = -1.0f * Key;
+				GRequestControl.StepDirection.x = -1.0f * Key;
 				break;
 			default:
 				break;

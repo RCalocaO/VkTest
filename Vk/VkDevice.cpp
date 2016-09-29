@@ -267,7 +267,7 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 	if (Layout.DepthStencilFormat != VK_FORMAT_UNDEFINED)
 	{
 		CurrentDesc->format = Layout.DepthStencilFormat;
-		CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
+		CurrentDesc->samples = Layout.NumSamples;
 		CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
