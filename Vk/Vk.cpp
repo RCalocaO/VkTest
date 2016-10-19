@@ -16,7 +16,7 @@ FControl::FControl()
 	, CameraPos{0, 0, -10, 1}
 	, ViewMode(EViewMode::Solid)
 	, DoPost(!true)
-	, DoMSAA(!false)
+	, DoMSAA(false)
 {
 }
 
@@ -65,7 +65,6 @@ static FUniformBuffer<FObjUB> GIdentityUB;
 static FImage2DWithView GCheckerboardTexture;
 static FImage2DWithView GHeightMap;
 static FSampler GSampler;
-
 
 struct FRenderTargetPool
 {
@@ -249,8 +248,6 @@ FThread GThread;
 
 #endif
 
-
-
 struct FPosColorUVVertex
 {
 	float x, y, z;
@@ -415,9 +412,8 @@ struct FObjectCache
 		return NewFramebuffer;
 	}
 
-	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, FRenderPass* RenderPass, bool bWireframe = false)
+	FGfxPipeline* GetOrCreateGfxPipeline(const FGfxPSOLayout& Layout)
 	{
-		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass->RenderPass, bWireframe);
 		auto Found = GfxPipelines.find(Layout);
 		if (Found != GfxPipelines.end())
 		{
@@ -425,10 +421,34 @@ struct FObjectCache
 		}
 
 		auto* NewPipeline = new FGfxPipeline;
-		NewPipeline->RSInfo.polygonMode = bWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
-		NewPipeline->Create(Device->Device, GfxPSO, VF, Width, Height, RenderPass);
+		NewPipeline->RSInfo.polygonMode = Layout.bWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+		switch (Layout.Blend)
+		{
+		case FGfxPSOLayout::EBlend::Translucent:
+			for (uint32 Index = 0; Index < NewPipeline->CBInfo.attachmentCount; ++Index)
+			{
+				VkPipelineColorBlendAttachmentState* Attachment = (VkPipelineColorBlendAttachmentState*)&NewPipeline->CBInfo.pAttachments[Index];
+				//Attachment->blendEnable = VK_TRUE;
+				Attachment->colorBlendOp = VK_BLEND_OP_ADD;
+				Attachment->alphaBlendOp = VK_BLEND_OP_ADD;
+				Attachment->srcColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+				Attachment->dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+				Attachment->srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+				Attachment->dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			}
+			break;
+		default:
+			break;
+		}
+		NewPipeline->Create(Device->Device, Layout.GfxPSO, Layout.VF, Layout.Width, Layout.Height, Layout.RenderPass);
 		GfxPipelines[Layout] = NewPipeline;
 		return NewPipeline;
+	}
+
+	FGfxPipeline* GetOrCreateGfxPipeline(FGfxPSO* GfxPSO, FVertexFormat* VF, uint32 Width, uint32 Height, FRenderPass* RenderPass, bool bWireframe = false)
+	{
+		FGfxPSOLayout Layout(GfxPSO, VF, Width, Height, RenderPass, bWireframe);
+		return GetOrCreateGfxPipeline(Layout);
 	}
 
 	FComputePipeline* GetOrCreateComputePipeline(FComputePSO* ComputePSO)
@@ -1076,7 +1096,7 @@ void DoRender()
 
 	// Blit post into scene color
 	GSwapchain.AcquireNextImage();
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	{
 		uint32 Width = min(GSwapchain.GetWidth(), SceneColor->Texture.GetWidth());

@@ -179,6 +179,7 @@
   <ItemGroup>
     <None Include="..\Shaders\CreateFloor.comp" />
     <None Include="..\Shaders\FillTexture.comp" />
+    <None Include="..\Shaders\PostVS.vert" />
     <None Include="..\Shaders\Test0.comp" />
     <None Include="..\Shaders\Test0.frag" />
     <None Include="..\Shaders\Test0.vert" />

@@ -19,6 +19,14 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 
 			checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
 
+			for (auto& Property : InstanceProperties)
+			{
+				std::string s = "Found Layer: ";
+				s += Property.layerName;
+				s += "\n";
+				::OutputDebugStringA(s.c_str());
+			}
+
 			const char* UseValidationLayers[] =
 			{
 				//"VK_LAYER_LUNARG_api_dump",
@@ -482,7 +490,7 @@ FGfxPipeline::FGfxPipeline()
 	DynamicInfo.pDynamicStates = Dynamic;
 }
 
-void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, FRenderPass* RenderPass)
+void FGfxPipeline::Create(VkDevice Device, const FGfxPSO* PSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass)
 {
 	std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 	PSO->SetupShaderStages(ShaderStages);
@@ -494,7 +502,16 @@ void FGfxPipeline::Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFo
 	CreateInfo.pSetLayouts = &PSO->DSLayout;
 	checkVk(vkCreatePipelineLayout(Device, &CreateInfo, nullptr, &PipelineLayout));
 
-	VkPipelineVertexInputStateCreateInfo VIInfo = VertexFormat->GetCreateInfo();
+	VkPipelineVertexInputStateCreateInfo VIInfo;
+	if (VertexFormat)
+	{
+		VIInfo = VertexFormat->GetCreateInfo();
+	}
+	else
+	{
+		MemZero(VIInfo);
+		VIInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	}
 
 	//Viewport.x = 0;
 	//Viewport.y = 0;

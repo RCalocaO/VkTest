@@ -503,7 +503,7 @@ struct FPSO
 
 	VkDescriptorSetLayout DSLayout = VK_NULL_HANDLE;
 
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const
 	{
 	}
 };
@@ -547,7 +547,7 @@ struct FGfxPSO : public FPSO
 		OutBindings.push_back(NewBinding);
 	}
 
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const override
 	{
 		VkPipelineShaderStageCreateInfo Info;
 		MemZero(Info);
@@ -596,7 +596,7 @@ struct FVertexFormat
 		VertexAttributes.push_back(VIADesc);
 	}
 
-	VkPipelineVertexInputStateCreateInfo GetCreateInfo()
+	VkPipelineVertexInputStateCreateInfo GetCreateInfo() const
 	{
 		VkPipelineVertexInputStateCreateInfo VIInfo;
 		MemZero(VIInfo);
@@ -610,10 +610,9 @@ struct FVertexFormat
 	}
 };
 
-class FGfxPSOLayout
+struct FGfxPSOLayout
 {
-public:
-	FGfxPSOLayout(FGfxPSO* InGfxPSO, FVertexFormat* InVF, uint32 InWidth, uint32 InHeight, VkRenderPass InRenderPass, bool bInWireframe)
+	FGfxPSOLayout(FGfxPSO* InGfxPSO, FVertexFormat* InVF, uint32 InWidth, uint32 InHeight, struct FRenderPass* InRenderPass, bool bInWireframe)
 		: GfxPSO(InGfxPSO)
 		, VF(InVF)
 		, Width(InWidth)
@@ -625,15 +624,21 @@ public:
 
 	friend inline bool operator < (const FGfxPSOLayout& A, const FGfxPSOLayout& B)
 	{
-		return A.Width < B.Width || A.Height < B.Height || A.GfxPSO < B.GfxPSO || A.VF < B.VF || A.RenderPass < B.RenderPass || A.bWireframe < B.bWireframe;
+		return memcmp(&A, &B, sizeof(A)) < 0;
 	}
-protected:
+
 	FGfxPSO* GfxPSO;
 	FVertexFormat* VF;
 	uint32 Width;
 	uint32 Height;
-	VkRenderPass RenderPass;
+	struct FRenderPass* RenderPass;
 	bool bWireframe;
+	enum class EBlend
+	{
+		Opaque,
+		Translucent,
+	};
+	EBlend Blend = EBlend::Opaque;
 };
 
 struct FComputePSO : public FPSO
@@ -886,7 +891,7 @@ struct FGfxPipeline : public FBasePipeline
 	VkPipelineDynamicStateCreateInfo DynamicInfo;
 
 	FGfxPipeline();
-	void Create(VkDevice Device, FGfxPSO* PSO, FVertexFormat* VertexFormat, uint32 Width, uint32 Height, FRenderPass* RenderPass);	
+	void Create(VkDevice Device, const FGfxPSO* PSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass);	
 };
 
 struct FComputePipeline : public FBasePipeline

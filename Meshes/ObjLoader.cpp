@@ -123,7 +123,7 @@ namespace Obj
 							int32 VIndex = ReadIntAndAdvance(Ptr);
 							if (VIndex < 0)
 							{
-								VIndex = VIndex + OutObj.Vs.size();
+								VIndex = VIndex + (int32)OutObj.Vs.size();
 							}
 							Face.Corners[Index].Pos = VIndex;
 						}
@@ -132,7 +132,7 @@ namespace Obj
 							int32 VIndex = ReadIntAndAdvance(Ptr);
 							if (VIndex < 0)
 							{
-								VIndex = VIndex + OutObj.VTs.size();
+								VIndex = VIndex + (int32)OutObj.VTs.size();
 							}
 							Face.Corners[Index].UV = VIndex;
 						}
@@ -141,7 +141,7 @@ namespace Obj
 							int32 VIndex = ReadIntAndAdvance(Ptr);
 							if (VIndex < 0)
 							{
-								VIndex = VIndex + OutObj.VNs.size();
+								VIndex = VIndex + (int32)OutObj.VNs.size();
 							}
 							Face.Corners[Index].Normal = VIndex;
 						}
