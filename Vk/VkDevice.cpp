@@ -636,3 +636,138 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 
 	State = EState::InsideRenderPass;
 }
+
+#include <vulkan/spirv.h>
+void FShader::GenerateReflection()
+{
+	uint32* StartWord = (uint32*)&SpirV[0];
+	uint32* Word = StartWord;
+	check(*Word++ == SpvMagicNumber);	// Magic
+	*Word++; // Version
+	*Word++; // Generator
+	uint32 Bound = *Word++;
+	*Word++; // Schema
+
+	std::map<uint32, std::string> NameMap;
+
+	struct FStructName
+	{
+		std::vector<std::string> Members;
+	};
+	std::map<uint32, FStructName> StructNameMap;
+
+	std::vector<uint32> BlockMap;
+	std::map<uint32, uint32> DescriptorSetMap;
+	std::map<uint32, uint32> BindingMap;
+
+	auto LiteralString = [](uint32*& Word, uint32 WordCount)
+	{
+		std::string Name;
+		for (uint32 Index = 0; Index < WordCount; ++Index)
+		{
+			uint32 Name4 = *Word++;
+			for (int32 SubIndex = 0; SubIndex < 4; ++SubIndex)
+			{
+				char c = Name4 & 0x7f;
+				if (!c)
+				{
+					break;
+				}
+				Name += c;
+				Name4 >>= 8;
+			}
+		}
+		return Name;
+	};
+
+	while (Word < StartWord + SpirV.size() / 4)
+	{
+		uint32 OpCode = *Word & SpvOpCodeMask;
+		uint32 WordCount = *Word >> SpvWordCountShift;
+		++Word;
+		--WordCount;
+		switch (OpCode)
+		{
+		case SpvOpName:
+		{
+			uint32 Id = *Word++;
+			NameMap[Id] = LiteralString(Word, WordCount - 1);
+		}
+			break;
+		case SpvOpMemberName:
+		{
+			uint32 StructId = *Word++;
+			uint32 MemberIndex = *Word++;
+			check(MemberIndex == StructNameMap[StructId].Members.size());
+			StructNameMap[StructId].Members.push_back(LiteralString(Word, WordCount - 2));
+		}
+			break;
+		case SpvOpDecorate:
+		{
+			uint32 Id = *Word++;
+			uint32 Decoration = *Word++;
+			WordCount -= 2;
+			switch (Decoration)
+			{
+			case SpvDecorationBlock:
+				BlockMap.push_back(Id);
+				break;
+			case SpvDecorationDescriptorSet:
+				DescriptorSetMap[Id] = *Word++;
+				break;
+			case SpvDecorationBinding:
+				BindingMap[Id] = *Word++;
+				break;
+			default:
+				Word += WordCount;
+				break;
+			}
+		}
+		break;
+
+		default:
+			Word += WordCount;
+			break;
+		}
+	}
+
+	struct FDescriptorSetInfo
+	{
+		uint32 DescriptorSetIndex;
+		struct FBindingInfo
+		{
+			std::string Name;
+			uint32 BindingIndex;
+		};
+		std::map<uint32, FBindingInfo> Bindings;
+		std::string Name;
+	};
+
+	std::map<uint32, FDescriptorSetInfo> DescriptorSets;
+
+	for (auto NamePair : NameMap)
+	{
+		uint32 Id = NamePair.first;
+		auto FoundBinding = BindingMap.find(Id);
+		if (FoundBinding == BindingMap.end())
+		{
+			continue;
+		}
+		uint32 Binding = FoundBinding->second;
+
+		auto FoundSet = DescriptorSetMap.find(Id);
+		if (FoundSet == DescriptorSetMap.end())
+		{
+			continue;
+		}
+		uint32 Set = FoundSet->second;
+
+		FDescriptorSetInfo& Info = DescriptorSets[Set];
+		Info.DescriptorSetIndex = Set;
+		Info.Name = NamePair.second;
+		Info.Bindings[Binding].Name = NamePair.second;
+		Info.Bindings[Binding].BindingIndex = Binding;
+	}
+
+	DescriptorSets.size();
+}

@@ -461,6 +461,9 @@ struct FShader
 		CreateInfo.pCode = (uint32*)&SpirV[0];
 
 		checkVk(vkCreateShaderModule(Device, &CreateInfo, nullptr, &ShaderModule));
+
+		GenerateReflection();
+
 		return true;
 	}
 
@@ -469,6 +472,8 @@ struct FShader
 		vkDestroyShaderModule(Device, ShaderModule, nullptr);
 		ShaderModule = VK_NULL_HANDLE;
 	}
+
+	void GenerateReflection();
 
 	std::vector<char> SpirV;
 	VkShaderModule ShaderModule = VK_NULL_HANDLE;
