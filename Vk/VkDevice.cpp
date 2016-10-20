@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "VkDevice.h"
 #include "VkResources.h"
+#include <set>
 
 static bool GSkipValidation = false;
 
@@ -656,9 +657,13 @@ void FShader::GenerateReflection()
 	};
 	std::map<uint32, FStructName> StructNameMap;
 
-	std::vector<uint32> BlockMap;
+	std::set<uint32> BlockMap;
 	std::map<uint32, uint32> DescriptorSetMap;
 	std::map<uint32, uint32> BindingMap;
+	std::map<uint32, uint32> SampledImageMap;
+	std::map<uint32, uint32> ImageMap;
+	std::map<uint32, uint32> PointerMap;
+	std::map<uint32, uint32> VariableMap;
 
 	auto LiteralString = [](uint32*& Word, uint32 WordCount)
 	{
@@ -683,8 +688,9 @@ void FShader::GenerateReflection()
 	while (Word < StartWord + SpirV.size() / 4)
 	{
 		uint32 OpCode = *Word & SpvOpCodeMask;
-		uint32 WordCount = *Word >> SpvWordCountShift;
+		uint32 WordCount = (*Word >> SpvWordCountShift);
 		++Word;
+		check(WordCount >= 1);
 		--WordCount;
 		switch (OpCode)
 		{
@@ -702,6 +708,56 @@ void FShader::GenerateReflection()
 			StructNameMap[StructId].Members.push_back(LiteralString(Word, WordCount - 2));
 		}
 			break;
+		case SpvOpTypeImage:
+		{
+			uint32 ResultId = *Word++;
+			uint32 SampledType = *Word++;
+			uint32 Dim = *Word++;
+			uint32 Depth = *Word++;
+			uint32 Arrayed = *Word++;
+			uint32 MS = *Word++;
+			uint32 Sampled = *Word++;
+			uint32 Format = *Word++;
+			WordCount -= 8;
+			if (WordCount == 1)
+			{
+				uint32 Access = *Word++;
+			}
+			else
+			{
+				check(WordCount == 0);
+			}
+			ImageMap[ResultId] = SampledType;
+		}
+			break;
+		case SpvOpTypeSampledImage:
+		{
+			uint32 ResultId = *Word++;
+			uint32 ImageType = *Word++;
+			SampledImageMap[ResultId] = ImageType;
+		}
+			break;
+		case SpvOpTypePointer:
+		{
+			uint32 ResultId = *Word++;
+			uint32 StorageClass = *Word++;
+			uint32 Type = *Word++;
+			PointerMap[ResultId] = Type;
+		}
+			break;
+		case SpvOpVariable:
+		{
+			uint32 ResultType = *Word++;
+			uint32 ResultId = *Word++;
+			uint32 StorageClass = *Word++;
+			for (uint32 Index = 3; Index < WordCount; ++Index)
+			{
+				uint32 Initializer = *Word++;
+				Initializer = Initializer;
+			}
+			VariableMap[ResultId] = ResultType;
+		}
+			break;
 		case SpvOpDecorate:
 		{
 			uint32 Id = *Word++;
@@ -710,7 +766,7 @@ void FShader::GenerateReflection()
 			switch (Decoration)
 			{
 			case SpvDecorationBlock:
-				BlockMap.push_back(Id);
+				BlockMap.insert(Id);
 				break;
 			case SpvDecorationDescriptorSet:
 				DescriptorSetMap[Id] = *Word++;
@@ -738,9 +794,16 @@ void FShader::GenerateReflection()
 		{
 			std::string Name;
 			uint32 BindingIndex;
+			enum class EType
+			{
+				Unknown,
+				SampledImage,
+				Image,
+				UniformBuffer,
+			};
+			EType Type = EType::Unknown;
 		};
 		std::map<uint32, FBindingInfo> Bindings;
-		std::string Name;
 	};
 
 	std::map<uint32, FDescriptorSetInfo> DescriptorSets;
@@ -762,11 +825,64 @@ void FShader::GenerateReflection()
 		}
 		uint32 Set = FoundSet->second;
 
-		FDescriptorSetInfo& Info = DescriptorSets[Set];
-		Info.DescriptorSetIndex = Set;
-		Info.Name = NamePair.second;
-		Info.Bindings[Binding].Name = NamePair.second;
-		Info.Bindings[Binding].BindingIndex = Binding;
+		auto Type = FDescriptorSetInfo::FBindingInfo::EType::Unknown;
+		// Try to find this variable
+		auto FoundVar = VariableMap.find(Id);
+		if (FoundVar != VariableMap.end())
+		{
+			uint32 VarType = FoundVar->second;
+
+			auto FoundPtrType = PointerMap.find(VarType);
+			if (FoundPtrType == PointerMap.end())
+			{
+				check(0);
+				continue;
+			}
+			uint32 PtrType = FoundPtrType->second;
+
+			auto FoundSampledImage = SampledImageMap.find(PtrType);
+			if (FoundSampledImage != SampledImageMap.end())
+			{
+				Type = FDescriptorSetInfo::FBindingInfo::EType::SampledImage;
+			}
+			else
+			{
+				auto FoundImage = ImageMap.find(PtrType);
+				if (FoundImage != ImageMap.end())
+				{
+					Type = FDescriptorSetInfo::FBindingInfo::EType::Image;
+				}
+				else
+				{
+					auto FoundStruct = StructNameMap.find(PtrType);
+					if (FoundStruct != StructNameMap.end())
+					{
+						if (BlockMap.find(PtrType) != BlockMap.end())
+						{
+							Type = FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer;
+						}
+					}
+					else
+					{
+						// Try other types...
+						check(0);
+					}
+				}
+			}
+		}
+		else
+		{
+			check(0);
+		}
+
+		if (Type != FDescriptorSetInfo::FBindingInfo::EType::Unknown)
+		{
+			FDescriptorSetInfo& Info = DescriptorSets[Set];
+			Info.DescriptorSetIndex = Set;
+			Info.Bindings[Binding].Name = NamePair.second;
+			Info.Bindings[Binding].BindingIndex = Binding;
+			Info.Bindings[Binding].Type = Type;
+		}
 	}
 
 	DescriptorSets.size();
