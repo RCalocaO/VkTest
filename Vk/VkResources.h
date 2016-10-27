@@ -443,6 +443,28 @@ struct FSampler
 	}
 };
 
+struct FDescriptorSetInfo
+{
+	uint32 DescriptorSetIndex;
+	struct FBindingInfo
+	{
+		std::string Name;
+		uint32 BindingIndex;
+		enum class EType
+		{
+			Unknown,
+			SampledImage,
+			StorageImage,
+			Image,
+			UniformBuffer,
+			StorageBuffer,
+		};
+		EType Type = EType::Unknown;
+	};
+	std::map<uint32, FBindingInfo> Bindings;
+};
+
+
 struct FShader
 {
 	bool Create(const char* Filename, VkDevice Device)
@@ -462,8 +484,6 @@ struct FShader
 
 		checkVk(vkCreateShaderModule(Device, &CreateInfo, nullptr, &ShaderModule));
 
-		GenerateReflection();
-
 		return true;
 	}
 
@@ -473,7 +493,7 @@ struct FShader
 		ShaderModule = VK_NULL_HANDLE;
 	}
 
-	void GenerateReflection();
+	void GenerateReflection(std::map<uint32, FDescriptorSetInfo>& DescriptorSets);
 
 	std::vector<char> SpirV;
 	VkShaderModule ShaderModule = VK_NULL_HANDLE;
@@ -497,6 +517,7 @@ struct FPSO
 	{
 		std::vector<VkDescriptorSetLayoutBinding> DSBindings;
 		SetupLayoutBindings(DSBindings);
+		CompareAgainstReflection(DSBindings);
 
 		VkDescriptorSetLayoutCreateInfo Info;
 		MemZero(Info);
@@ -511,6 +532,10 @@ struct FPSO
 	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const
 	{
 	}
+
+	void CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& Bindings);
+
+	std::map<uint32, FDescriptorSetInfo> DescriptorSetInfo;
 };
 
 struct FGfxPSO : public FPSO
@@ -537,6 +562,8 @@ struct FGfxPSO : public FPSO
 			return false;
 		}
 
+		PS.GenerateReflection(DescriptorSetInfo);
+		VS.GenerateReflection(DescriptorSetInfo);
 		CreateDescriptorSetLayout(Device);
 		return true;
 	}
@@ -663,6 +690,7 @@ struct FComputePSO : public FPSO
 			return false;
 		}
 
+		CS.GenerateReflection(DescriptorSetInfo);
 		CreateDescriptorSetLayout(Device);
 		return true;
 	}

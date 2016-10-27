@@ -639,7 +639,8 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 }
 
 #include <vulkan/spirv.h>
-void FShader::GenerateReflection()
+
+void FShader::GenerateReflection(std::map<uint32, FDescriptorSetInfo>& DescriptorSets)
 {
 	uint32* StartWord = (uint32*)&SpirV[0];
 	uint32* Word = StartWord;
@@ -650,20 +651,13 @@ void FShader::GenerateReflection()
 	*Word++; // Schema
 
 	std::map<uint32, std::string> NameMap;
-
-	struct FStructName
-	{
-		std::vector<std::string> Members;
-	};
-	std::map<uint32, FStructName> StructNameMap;
-
 	std::set<uint32> BlockMap;
 	std::map<uint32, uint32> DescriptorSetMap;
 	std::map<uint32, uint32> BindingMap;
 	std::map<uint32, uint32> SampledImageMap;
 	std::map<uint32, uint32> ImageMap;
+	std::set<uint32> StorageImageMap;
 	std::map<uint32, uint32> PointerMap;
-	std::map<uint32, uint32> VariableMap;
 
 	auto LiteralString = [](uint32*& Word, uint32 WordCount)
 	{
@@ -685,47 +679,80 @@ void FShader::GenerateReflection()
 		return Name;
 	};
 
+	SpvOp PrevOpCode;
+	bool bInFunction = false;
 	while (Word < StartWord + SpirV.size() / 4)
 	{
-		uint32 OpCode = *Word & SpvOpCodeMask;
+		SpvOp OpCode = (SpvOp)(*Word & SpvOpCodeMask);
 		uint32 WordCount = (*Word >> SpvWordCountShift);
 		++Word;
 		check(WordCount >= 1);
-		--WordCount;
 		switch (OpCode)
 		{
 		case SpvOpName:
 		{
 			uint32 Id = *Word++;
-			NameMap[Id] = LiteralString(Word, WordCount - 1);
+			NameMap[Id] = LiteralString(Word, WordCount - 2);
 		}
 			break;
+		case SpvOpFunction:
+		{
+			uint32 ResultType = *Word++;
+			uint32 ResultId = *Word++;
+			SpvFunctionControlMask FunctionControl = (SpvFunctionControlMask)*Word++;
+			uint32 FunctionType = *Word++;
+			check(!bInFunction);
+			bInFunction = true;
+		}
+			break;
+		case SpvOpFunctionEnd:
+		{
+			// 1 WordCount
+			check(bInFunction);
+			bInFunction = false;
+		}
+			break;
+#if 0
 		case SpvOpMemberName:
 		{
 			uint32 StructId = *Word++;
 			uint32 MemberIndex = *Word++;
 			check(MemberIndex == StructNameMap[StructId].Members.size());
-			StructNameMap[StructId].Members.push_back(LiteralString(Word, WordCount - 2));
+			StructNameMap[StructId].Members.push_back(LiteralString(Word, WordCount - 3));
 		}
 			break;
+#endif
 		case SpvOpTypeImage:
 		{
 			uint32 ResultId = *Word++;
 			uint32 SampledType = *Word++;
-			uint32 Dim = *Word++;
-			uint32 Depth = *Word++;
-			uint32 Arrayed = *Word++;
-			uint32 MS = *Word++;
+			SpvDim Dim = (SpvDim)*Word++;
+			uint32 Depth = *Word++;	// 0 means not depth, 1 means depth, 2 means no indication
+			uint32 Arrayed = *Word++;	// 1 means array
+			uint32 MS = *Word++; // 0 means single sample, 1 means multisample
 			uint32 Sampled = *Word++;
-			uint32 Format = *Word++;
-			WordCount -= 8;
-			if (WordCount == 1)
+			switch (Sampled)
 			{
-				uint32 Access = *Word++;
+			case 0:	// indicates this is only known at run time, not at compile time
+				break;
+			case 1: // indicates will be used with sampler
+				break;
+			case 2: // indicates will be used without a sampler(a storage image)
+				StorageImageMap.insert(ResultId);
+				break;
+			default:
+				check(0);
+				break;
+			}
+			SpvImageFormat Format = (SpvImageFormat)*Word++;
+			if (WordCount > 9)
+			{
+				check(WordCount == 10)
+				SpvAccessQualifier Access = (SpvAccessQualifier)*Word++;
 			}
 			else
 			{
-				check(WordCount == 0);
+				check(WordCount == 9)
 			}
 			ImageMap[ResultId] = SampledType;
 		}
@@ -749,20 +776,108 @@ void FShader::GenerateReflection()
 		{
 			uint32 ResultType = *Word++;
 			uint32 ResultId = *Word++;
-			uint32 StorageClass = *Word++;
-			for (uint32 Index = 3; Index < WordCount; ++Index)
+			SpvStorageClass StorageClass = (SpvStorageClass)*Word++;
+			//if (StorageClass == SpvStorageClassUniform)
+			//{
+			//	UniformVariableMap[ResultId] = ResultType;
+			//}
+			for (uint32 Index = 4; Index < WordCount; ++Index)
 			{
 				uint32 Initializer = *Word++;
 				Initializer = Initializer;
 			}
-			VariableMap[ResultId] = ResultType;
+
+			// Globals
+			if (!bInFunction)
+			{
+				switch (StorageClass)
+				{
+				case SpvStorageClassUniform:
+				{
+					auto PointerFound = PointerMap.find(ResultType);
+					check(PointerFound != PointerMap.end());
+					auto NameFound = NameMap.find(PointerFound->second);
+					check(NameFound != NameMap.end());
+					auto BindingFound = BindingMap.find(ResultId);
+					check(BindingFound != BindingMap.end());
+					auto DescriptorSetFound = DescriptorSetMap.find(ResultId);
+					check(DescriptorSetFound != DescriptorSetMap.end());
+					auto BlockFound = BlockMap.find(PointerFound->second);
+					FDescriptorSetInfo& Info = DescriptorSets[DescriptorSetFound->second];
+					Info.DescriptorSetIndex = DescriptorSetFound->second;
+					Info.Bindings[BindingFound->second].Name = NameFound->second;
+					Info.Bindings[BindingFound->second].BindingIndex = BindingFound->second;
+					if (BlockFound != BlockMap.end())
+					{
+						Info.Bindings[BindingFound->second].Type = FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer;
+					}
+					else
+					{
+						Info.Bindings[BindingFound->second].Type = FDescriptorSetInfo::FBindingInfo::EType::StorageBuffer;
+					}
+				}
+					break;
+				case SpvStorageClassUniformConstant:
+				{
+					auto NameFound = NameMap.find(ResultId);
+					check(NameFound != NameMap.end());
+					auto BindingFound = BindingMap.find(ResultId);
+					check(BindingFound != BindingMap.end());
+					auto DescriptorSetFound = DescriptorSetMap.find(ResultId);
+					check(DescriptorSetFound != DescriptorSetMap.end());
+					auto PointerFound = PointerMap.find(ResultType);
+					if (PointerFound != PointerMap.end())
+					{
+						uint32 PointerType = PointerFound->second;
+						if (SampledImageMap.find(PointerType) != SampledImageMap.end())
+						{
+							FDescriptorSetInfo& Info = DescriptorSets[DescriptorSetFound->second];
+							Info.DescriptorSetIndex = DescriptorSetFound->second;
+							Info.Bindings[BindingFound->second].Name = NameFound->second;
+							Info.Bindings[BindingFound->second].BindingIndex = BindingFound->second;
+							Info.Bindings[BindingFound->second].Type = FDescriptorSetInfo::FBindingInfo::EType::SampledImage;
+						}
+						else if (ImageMap.find(PointerType) != ImageMap.end())
+						{
+							FDescriptorSetInfo& Info = DescriptorSets[DescriptorSetFound->second];
+							Info.DescriptorSetIndex = DescriptorSetFound->second;
+							Info.Bindings[BindingFound->second].Name = NameFound->second;
+							Info.Bindings[BindingFound->second].BindingIndex = BindingFound->second;
+							if (StorageImageMap.find(PointerType) != StorageImageMap.end())
+							{
+								Info.Bindings[BindingFound->second].Type = FDescriptorSetInfo::FBindingInfo::EType::StorageImage;
+							}
+							else
+							{
+								Info.Bindings[BindingFound->second].Type = FDescriptorSetInfo::FBindingInfo::EType::Image;
+							}
+						}
+						else
+						{
+							check(0);
+						}
+					}
+					else
+					{
+						check(0);
+					}
+				}
+					break;
+				case SpvStorageClassInput:
+				case SpvStorageClassOutput:
+					// Continue for now
+					break;
+				default:
+					check(0);
+					break;
+				}
+			}
 		}
 			break;
 		case SpvOpDecorate:
 		{
 			uint32 Id = *Word++;
 			uint32 Decoration = *Word++;
-			WordCount -= 2;
 			switch (Decoration)
 			{
 			case SpvDecorationBlock:
@@ -770,120 +885,69 @@ void FShader::GenerateReflection()
 				break;
 			case SpvDecorationDescriptorSet:
 				DescriptorSetMap[Id] = *Word++;
+				check(WordCount == 4);
 				break;
 			case SpvDecorationBinding:
 				BindingMap[Id] = *Word++;
+				check(WordCount == 4);
 				break;
 			default:
-				Word += WordCount;
+				Word += WordCount - 3;
 				break;
 			}
 		}
-		break;
-
+			break;
 		default:
-			Word += WordCount;
+			Word += WordCount - 1;
 			break;
 		}
+
+		PrevOpCode = OpCode;
 	}
+}
 
-	struct FDescriptorSetInfo
+
+void FPSO::CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& Bindings)
+{
+	auto DSInfoCopy = DescriptorSetInfo;
+
+	//#todo: Fix to work with more than one Descriptor Set
+	check(DSInfoCopy.size() <= 1);
+	for (auto& Binding : Bindings)
 	{
-		uint32 DescriptorSetIndex;
-		struct FBindingInfo
+		auto FoundBinding = DSInfoCopy[0].Bindings.find(Binding.binding);
+		if (FoundBinding != DSInfoCopy[0].Bindings.end())
 		{
-			std::string Name;
-			uint32 BindingIndex;
-			enum class EType
+			auto& FoundBindingInfo = FoundBinding->second;
+			switch (Binding.descriptorType)
 			{
-				Unknown,
-				SampledImage,
-				Image,
-				UniformBuffer,
-			};
-			EType Type = EType::Unknown;
-		};
-		std::map<uint32, FBindingInfo> Bindings;
-	};
-
-	std::map<uint32, FDescriptorSetInfo> DescriptorSets;
-
-	for (auto NamePair : NameMap)
-	{
-		uint32 Id = NamePair.first;
-		auto FoundBinding = BindingMap.find(Id);
-		if (FoundBinding == BindingMap.end())
-		{
-			continue;
-		}
-		uint32 Binding = FoundBinding->second;
-
-		auto FoundSet = DescriptorSetMap.find(Id);
-		if (FoundSet == DescriptorSetMap.end())
-		{
-			continue;
-		}
-		uint32 Set = FoundSet->second;
-
-		auto Type = FDescriptorSetInfo::FBindingInfo::EType::Unknown;
-		// Try to find this variable
-		auto FoundVar = VariableMap.find(Id);
-		if (FoundVar != VariableMap.end())
-		{
-			uint32 VarType = FoundVar->second;
-
-			auto FoundPtrType = PointerMap.find(VarType);
-			if (FoundPtrType == PointerMap.end())
-			{
+			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+				check(FoundBindingInfo.Type == FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer);
+				DSInfoCopy[0].Bindings.erase(FoundBindingInfo.BindingIndex);
+				break;
+			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+				check(FoundBindingInfo.Type == FDescriptorSetInfo::FBindingInfo::EType::StorageBuffer);
+				DSInfoCopy[0].Bindings.erase(FoundBindingInfo.BindingIndex);
+				break;
+			case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+				check(FoundBindingInfo.Type == FDescriptorSetInfo::FBindingInfo::EType::SampledImage);
+				DSInfoCopy[0].Bindings.erase(FoundBindingInfo.BindingIndex);
+				break;
+			case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+				check(FoundBindingInfo.Type == FDescriptorSetInfo::FBindingInfo::EType::StorageImage);
+				DSInfoCopy[0].Bindings.erase(FoundBindingInfo.BindingIndex);
+				break;
+			default:
 				check(0);
-				continue;
-			}
-			uint32 PtrType = FoundPtrType->second;
-
-			auto FoundSampledImage = SampledImageMap.find(PtrType);
-			if (FoundSampledImage != SampledImageMap.end())
-			{
-				Type = FDescriptorSetInfo::FBindingInfo::EType::SampledImage;
-			}
-			else
-			{
-				auto FoundImage = ImageMap.find(PtrType);
-				if (FoundImage != ImageMap.end())
-				{
-					Type = FDescriptorSetInfo::FBindingInfo::EType::Image;
-				}
-				else
-				{
-					auto FoundStruct = StructNameMap.find(PtrType);
-					if (FoundStruct != StructNameMap.end())
-					{
-						if (BlockMap.find(PtrType) != BlockMap.end())
-						{
-							Type = FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer;
-						}
-					}
-					else
-					{
-						// Try other types...
-						check(0);
-					}
-				}
+				break;
 			}
 		}
 		else
 		{
-			check(0);
-		}
-
-		if (Type != FDescriptorSetInfo::FBindingInfo::EType::Unknown)
-		{
-			FDescriptorSetInfo& Info = DescriptorSets[Set];
-			Info.DescriptorSetIndex = Set;
-			Info.Bindings[Binding].Name = NamePair.second;
-			Info.Bindings[Binding].BindingIndex = Binding;
-			Info.Bindings[Binding].Type = Type;
+			// Extra binding set from C++
+			//check(0);
 		}
 	}
 
-	DescriptorSets.size();
+	check(DSInfoCopy[0].Bindings.empty());
 }

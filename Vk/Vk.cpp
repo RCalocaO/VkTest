@@ -277,16 +277,7 @@ struct FOneImagePSO : public FComputePSO
 	}
 };
 FOneImagePSO GFillTexturePSO;
-
-struct FTwoImagesPSO : public FComputePSO
-{
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-	}
-};
-FTwoImagesPSO GTestComputePSO;
+FOneImagePSO GTestComputePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
@@ -592,11 +583,11 @@ static bool LoadShadersAndGeometry()
 	}
 	else
 	{
-		check(GTestPSO.CreateVSPS(GDevice.Device, "../Shaders/Test0.vert.spv", "../Shaders/Test0.frag.spv"));
-		check(GTestComputePSO.Create(GDevice.Device, "../Shaders/Test0.comp.spv"));
+		check(GSetupFloorPSO.Create(GDevice.Device, "../Shaders/CreateFloor.comp.spv"));
 		check(GTestComputePostPSO.Create(GDevice.Device, "../Shaders/TestPost.comp.spv"));
 		check(GFillTexturePSO.Create(GDevice.Device, "../Shaders/FillTexture.comp.spv"));
-		check(GSetupFloorPSO.Create(GDevice.Device, "../Shaders/CreateFloor.comp.spv"));
+		check(GTestPSO.CreateVSPS(GDevice.Device, "../Shaders/Test0.vert.spv", "../Shaders/Test0.frag.spv"));
+		check(GTestComputePSO.Create(GDevice.Device, "../Shaders/Test0.comp.spv"));
 	}
 
 	// Setup Vertex Format
