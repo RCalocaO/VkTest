@@ -65,6 +65,7 @@ static FUniformBuffer<FObjUB> GIdentityUB;
 static FImage2DWithView GCheckerboardTexture;
 static FImage2DWithView GHeightMap;
 static FSampler GSampler;
+static FImageCubeWithView GCubeTest;
 
 struct FRenderTargetPool
 {
@@ -302,47 +303,6 @@ struct FSetupFloorPSO : public FComputePSO
 static FSetupFloorPSO GSetupFloorPSO;
 
 
-void FInstance::CreateDevice(FDevice& OutDevice)
-{
-	uint32 NumDevices;
-	checkVk(vkEnumeratePhysicalDevices(Instance, &NumDevices, nullptr));
-	std::vector<VkPhysicalDevice> Devices;
-	Devices.resize(NumDevices);
-	checkVk(vkEnumeratePhysicalDevices(Instance, &NumDevices, &Devices[0]));
-
-	for (uint32 Index = 0; Index < NumDevices; ++Index)
-	{
-		VkPhysicalDeviceProperties DeviceProperties;
-		vkGetPhysicalDeviceProperties(Devices[Index], &DeviceProperties);
-
-		uint32 NumQueueFamilies;
-		vkGetPhysicalDeviceQueueFamilyProperties(Devices[Index], &NumQueueFamilies, nullptr);
-		std::vector<VkQueueFamilyProperties> QueueFamilies;
-		QueueFamilies.resize(NumQueueFamilies);
-		vkGetPhysicalDeviceQueueFamilyProperties(Devices[Index], &NumQueueFamilies, &QueueFamilies[0]);
-
-		for (uint32 QueueIndex = 0; QueueIndex < NumQueueFamilies; ++QueueIndex)
-		{
-			VkBool32 bSupportsPresent;
-			checkVk(vkGetPhysicalDeviceSurfaceSupportKHR(Devices[Index], QueueIndex, Surface, &bSupportsPresent));
-			if (bSupportsPresent && QueueFamilies[QueueIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT)
-			{
-				OutDevice.PhysicalDevice = Devices[Index];
-				OutDevice.DeviceProperties = DeviceProperties;
-				OutDevice.PresentQueueFamilyIndex = QueueIndex;
-				goto Found;
-			}
-		}
-	}
-
-	// Not found!
-	check(0);
-	return;
-
-Found:
-	OutDevice.Create(Layers);
-}
-
 struct FObjectCache
 {
 	FDevice* Device = nullptr;
@@ -515,7 +475,7 @@ void MapAndFillBufferSyncOneShotCmdBuffer(FBuffer* DestBuffer, TFillLambda Fill,
 	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size);
 	FlushMappedBuffer(GDevice.Device, StagingBuffer);
 	CmdBuffer->End();
-	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
 }
 
@@ -635,6 +595,8 @@ void CreateAndFillTexture()
 	GCheckerboardTexture.Create(GDevice.Device, 64, 64, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
 	GHeightMap.Create(GDevice.Device, 64, 64, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
 
+	GCubeTest.Create(GDevice.Device, 64, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
+
 	FComputePipeline* Pipeline = GObjectCache.GetOrCreateComputePipeline(&GFillTexturePSO);
 
 	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
@@ -644,12 +606,14 @@ void CreateAndFillTexture()
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->Pipeline);
 	{
-		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GFillTexturePSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GFillTexturePSO.DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
 		WriteDescriptors.AddStorageImage(DescriptorSet, 0, GCheckerboardTexture.ImageView);
-		vkUpdateDescriptorSets(GDevice.Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+		//vkUpdateDescriptorSets(GDevice.Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline);
+		//vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->PipelineLayout, 0, 1, &DescriptorSet.Set, 0, nullptr);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GCheckerboardTexture.GetWidth() / 8, GCheckerboardTexture.GetHeight() / 8, 1);
@@ -678,7 +642,7 @@ void CreateAndFillTexture()
 	}
 
 	CmdBuffer->End();
-	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
 }
 
@@ -693,15 +657,15 @@ static void FillFloor(FCmdBuffer* CmdBuffer)
 	FCreateFloorUB& CreateFloorUB = *GCreateFloorUB.GetMappedData();
 
 	{
-		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GSetupFloorPSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GSetupFloorPSO.DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
 		WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
 		WriteDescriptors.AddStorageBuffer(DescriptorSet, 1, GFloorVB.Buffer);
 		WriteDescriptors.AddUniformBuffer(DescriptorSet, 2, GCreateFloorUB);
 		WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 3, GSampler, GHeightMap.ImageView);
-		vkUpdateDescriptorSets(GDevice.Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, CreateFloorUB.NumQuadsX, 1, CreateFloorUB.NumQuadsZ);
@@ -746,7 +710,7 @@ static void SetupFloor()
 		CmdBuffer->Begin();
 		FillFloor(CmdBuffer);
 		CmdBuffer->End();
-		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 		CmdBuffer->WaitForFence();
 	}
 /*
@@ -824,7 +788,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
 		CmdBuffer->End();
-		GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 		CmdBuffer->WaitForFence();
 	}
 
@@ -845,15 +809,15 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	}
 	ObjUB.Obj = FMatrix4x4::GetRotationY(ToRadians(AngleDegrees));
 
-	auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
 	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
-	vkUpdateDescriptorSets(Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
+	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
-	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
 	CmdBind(CmdBuffer, &GObjVB);
 	vkCmdDraw(CmdBuffer->CmdBuffer, (uint32)GObj.Faces.size() * 3, 1, 0, 0);
@@ -861,15 +825,14 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
 	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GCheckerboardTexture.ImageView);
-	vkUpdateDescriptorSets(Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
-
-	vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
 	CmdBind(CmdBuffer, &GFloorVB);
 	CmdBind(CmdBuffer, &GFloorIB);
@@ -955,13 +918,13 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
 	{
-		auto DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
 		WriteDescriptors.AddStorageImage(DescriptorSet, 0, SceneColorEntry->Texture.ImageView);
 		WriteDescriptors.AddStorageImage(DescriptorSet, 1, SceneColorAfterPostEntry->Texture.ImageView);
-		vkUpdateDescriptorSets(GDevice.Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
-		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, SceneColorAfterPostEntry->Texture.Image.Width / 8, SceneColorAfterPostEntry->Texture.Image.Height / 8, 1);
@@ -1027,9 +990,9 @@ void DoRender()
 
 	//TestCompute(CmdBuffer);
 
-	VkFormat ColorFormat = (VkFormat)GSwapchain.BACKBUFFER_VIEW_FORMAT;
+	VkFormat ColorFormat = GSwapchain.Format;
 
-	auto* DepthBuffer = GRenderTargetPool.Acquire("DepthBuffer", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, SceneColor->Texture.Image.Samples);
+	auto* DepthBuffer = GRenderTargetPool.Acquire("DepthBuffer", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, SceneColor->Texture.Image.Samples);
 	DepthBuffer->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
 	if (GControl.DoMSAA)
@@ -1101,7 +1064,7 @@ void DoRender()
 	CmdBuffer->End();
 
 	// First submit needs to wait for present semaphore
-	GCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, &GSwapchain.PresentCompleteSemaphores[GSwapchain.PresentCompleteSemaphoreIndex], &GSwapchain.RenderingSemaphores[GSwapchain.AcquiredImageIndex]);
+	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, &GSwapchain.PresentCompleteSemaphores[GSwapchain.PresentCompleteSemaphoreIndex], &GSwapchain.RenderingSemaphores[GSwapchain.AcquiredImageIndex]);
 
 	GSwapchain.Present(GDevice.PresentQueue);
 }
@@ -1115,6 +1078,16 @@ void DoResize(uint32 Width, uint32 Height)
 		GObjectCache.Destroy();
 		GSwapchain.Create(GInstance.Surface, GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
 		GObjectCache.Create(&GDevice);
+
+		{
+			// Setup on Present layout
+			auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+			CmdBuffer->Begin();
+			GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
+			CmdBuffer->End();
+			GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+			CmdBuffer->WaitForFence();
+		}
 	}
 }
 
@@ -1141,6 +1114,7 @@ void DoDeinit()
 
 	GCheckerboardTexture.Destroy();
 	GHeightMap.Destroy();
+	GCubeTest.Destroy();
 
 	GDescriptorPool.Destroy();
 

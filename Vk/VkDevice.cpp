@@ -31,6 +31,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 			const char* UseValidationLayers[] =
 			{
 				//"VK_LAYER_LUNARG_api_dump",
+				"VK_LAYER_LUNARG_core_validation",
 				"VK_LAYER_LUNARG_standard_validation",
 				"VK_LAYER_LUNARG_image",
 				"VK_LAYER_LUNARG_object_tracker",
@@ -39,7 +40,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 				"VK_LAYER_LUNARG_swapchain",
 				"VK_LAYER_GOOGLE_threading",
 				"VK_LAYER_GOOGLE_unique_objects",
-				"VK_LAYER_RENDERDOC_Capture",
+				//"VK_LAYER_RENDERDOC_Capture",
 			};
 
 			for (auto* DesiredLayer : UseValidationLayers)
@@ -140,6 +141,47 @@ VkBool32 FInstance::DebugReportCallback(VkDebugReportFlagsEXT Flags, VkDebugRepo
 	return false;
 }
 
+void FInstance::CreateDevice(FDevice& OutDevice)
+{
+	uint32 NumDevices;
+	checkVk(vkEnumeratePhysicalDevices(Instance, &NumDevices, nullptr));
+	std::vector<VkPhysicalDevice> Devices;
+	Devices.resize(NumDevices);
+	checkVk(vkEnumeratePhysicalDevices(Instance, &NumDevices, &Devices[0]));
+
+	for (uint32 Index = 0; Index < NumDevices; ++Index)
+	{
+		VkPhysicalDeviceProperties DeviceProperties;
+		vkGetPhysicalDeviceProperties(Devices[Index], &DeviceProperties);
+
+		uint32 NumQueueFamilies;
+		vkGetPhysicalDeviceQueueFamilyProperties(Devices[Index], &NumQueueFamilies, nullptr);
+		std::vector<VkQueueFamilyProperties> QueueFamilies;
+		QueueFamilies.resize(NumQueueFamilies);
+		vkGetPhysicalDeviceQueueFamilyProperties(Devices[Index], &NumQueueFamilies, &QueueFamilies[0]);
+
+		for (uint32 QueueIndex = 0; QueueIndex < NumQueueFamilies; ++QueueIndex)
+		{
+			VkBool32 bSupportsPresent;
+			checkVk(vkGetPhysicalDeviceSurfaceSupportKHR(Devices[Index], QueueIndex, Surface, &bSupportsPresent));
+			if (bSupportsPresent && QueueFamilies[QueueIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			{
+				OutDevice.PhysicalDevice = Devices[Index];
+				OutDevice.DeviceProperties = DeviceProperties;
+				OutDevice.PresentQueueFamilyIndex = QueueIndex;
+				goto Found;
+			}
+		}
+	}
+
+	// Not found!
+	check(0);
+	return;
+
+Found:
+	OutDevice.Create(Layers);
+}
+
 void FSwapchain::Create(VkSurfaceKHR SurfaceKHR, VkPhysicalDevice PhysicalDevice, VkDevice InDevice, VkSurfaceKHR Surface, uint32& WindowWidth, uint32& WindowHeight)
 {
 	Device = InDevice;
@@ -150,16 +192,8 @@ void FSwapchain::Create(VkSurfaceKHR SurfaceKHR, VkPhysicalDevice PhysicalDevice
 	Formats.resize(NumFormats);
 	checkVk(vkGetPhysicalDeviceSurfaceFormatsKHR(PhysicalDevice, SurfaceKHR, &NumFormats, &Formats[0]));
 
-	VkFormat ColorFormat;
 	check(NumFormats > 0);
-	if (NumFormats == 1 && Formats[0].format == VK_FORMAT_UNDEFINED)
-	{
-		ColorFormat = (VkFormat)SWAPCHAIN_IMAGE_FORMAT;
-	}
-	else
-	{
-		ColorFormat = Formats[0].format;
-	}
+	Format = Formats[0].format;
 
 	VkColorSpaceKHR ColorSpace = Formats[0].colorSpace;
 
@@ -214,7 +248,7 @@ void FSwapchain::Create(VkSurfaceKHR SurfaceKHR, VkPhysicalDevice PhysicalDevice
 	CreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	CreateInfo.surface = Surface;
 	CreateInfo.minImageCount = DesiredNumImages;
-	CreateInfo.imageFormat = ColorFormat;
+	CreateInfo.imageFormat = Format;
 	CreateInfo.imageColorSpace = ColorSpace;
 	CreateInfo.imageExtent = SurfaceResolution;
 	CreateInfo.imageArrayLayers = 1;
@@ -236,7 +270,7 @@ void FSwapchain::Create(VkSurfaceKHR SurfaceKHR, VkPhysicalDevice PhysicalDevice
 
 	for (uint32 Index = 0; Index < NumImages; ++Index)
 	{
-		ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, (VkFormat)BACKBUFFER_VIEW_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+		ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, Format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 		PresentCompleteSemaphores[Index].Create(Device);
 		RenderingSemaphores[Index].Create(Device);
 	}
@@ -950,4 +984,61 @@ void FPSO::CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& B
 	}
 
 	check(DSInfoCopy[0].Bindings.empty());
+}
+
+void FDescriptorPool::RefreshFences()
+{
+	for (auto& Pair : Sets)
+	{
+		auto& Used = Pair.second.Used;
+		for (int32 Index = (int32)Used.size() - 1; Index >= 0; --Index)
+		{
+			if (Used[Index]->FenceCounter < Used[Index]->UsedFence->FenceSignaledCounter)
+			{
+				FDescriptorSet* Set = Used[Index];
+				Used[Index] = Used.back();
+				Used.pop_back();
+				Pair.second.Free.push_back(Set);
+			}
+		}
+	}
+}
+	
+void FDescriptorPool::UpdateDescriptors(FWriteDescriptors& InWriteDescriptors)
+{
+	check(!InWriteDescriptors.bClosed);
+	if (!InWriteDescriptors.DSWrites.empty())
+	{
+		vkUpdateDescriptorSets(Device, (uint32)InWriteDescriptors.DSWrites.size(), &InWriteDescriptors.DSWrites[0], 0, nullptr);
+	}
+	InWriteDescriptors.bClosed = true;
+}
+
+
+void FCmdBufferMgr::Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
+{
+	check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Ended);
+	check(CmdBuffer->Secondary.empty());
+	VkPipelineStageFlags StageMask[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkSubmitInfo Info;
+	MemZero(Info);
+	Info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	Info.pWaitDstStageMask = StageMask;
+	Info.commandBufferCount = 1;
+	Info.pCommandBuffers = &CmdBuffer->CmdBuffer;
+	if (WaitSemaphore)
+	{
+		Info.waitSemaphoreCount = 1;
+		Info.pWaitSemaphores = &WaitSemaphore->Semaphore;
+	}
+	if (SignaledSemaphore)
+	{
+		Info.signalSemaphoreCount = 1;
+		Info.pSignalSemaphores = &SignaledSemaphore->Semaphore;
+	}
+	checkVk(vkQueueSubmit(Queue, 1, &Info, CmdBuffer->Fence->Fence));
+	CmdBuffer->Fence->State = FFence::EState::NotSignaled;
+	CmdBuffer->State = FPrimaryCmdBuffer::EState::Submitted;
+	Update();
+	DescriptorPool.RefreshFences();
 }

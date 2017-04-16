@@ -4,6 +4,8 @@
 #include "VkDevice.h"
 #include "VkMem.h"
 
+class FWriteDescriptors;
+
 struct FBuffer
 {
 	void Create(VkDevice InDevice, uint64 InSize, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
@@ -137,7 +139,7 @@ struct FUniformBuffer
 
 struct FImage
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits InSamples)
+	void Create2D(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits InSamples, bool bCubemap, uint32 NumArrayLayers)
 	{
 		Device = InDevice;
 		Width = InWidth;
@@ -146,16 +148,19 @@ struct FImage
 		Format = InFormat;
 		Samples = InSamples;
 
+		check(!bCubemap || Width == Height);
+
 		VkImageCreateInfo ImageInfo;
 		MemZero(ImageInfo);
 		ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		ImageInfo.flags = bCubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 		ImageInfo.imageType = VK_IMAGE_TYPE_2D;
 		ImageInfo.format = Format;
 		ImageInfo.extent.width = Width;
 		ImageInfo.extent.height = Height;
 		ImageInfo.extent.depth = 1;
 		ImageInfo.mipLevels = NumMips;
-		ImageInfo.arrayLayers = 1;
+		ImageInfo.arrayLayers = NumArrayLayers;
 		ImageInfo.samples = Samples;
 		ImageInfo.tiling = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0 ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
 		ImageInfo.usage = UsageFlags;
@@ -204,7 +209,7 @@ struct FImageView
 	VkDevice Device = VK_NULL_HANDLE;
 	VkFormat Format = VK_FORMAT_UNDEFINED;
 
-	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect)
+	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect, uint32 LayerCount)
 	{
 		Device = InDevice;
 		Format = InFormat;
@@ -221,7 +226,7 @@ struct FImageView
 		Info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		Info.subresourceRange.aspectMask = ImageAspect;
 		Info.subresourceRange.levelCount = 1;
-		Info.subresourceRange.layerCount = 1;
+		Info.subresourceRange.layerCount = LayerCount;
 		checkVk(vkCreateImageView(Device, &Info, nullptr, &ImageView));
 	}
 
@@ -362,14 +367,8 @@ inline VkImageAspectFlags GetImageAspectFlags(VkFormat Format)
 	}
 }
 
-struct FImage2DWithView
+struct FBaseImageWithView
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
-	{
-		Image.Create(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples);
-		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format));
-	}
-
 	void Destroy()
 	{
 		ImageView.Destroy();
@@ -393,6 +392,15 @@ struct FImage2DWithView
 	{
 		return ImageView.ImageView;
 	}
+};
+
+struct FImage2DWithView : public FBaseImageWithView
+{
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
+	{
+		Image.Create2D(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, false, 1);
+		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format), 1);
+	}
 
 	inline uint32 GetWidth() const
 	{
@@ -405,6 +413,24 @@ struct FImage2DWithView
 	}
 };
 
+struct FImageCubeWithView : public FBaseImageWithView
+{
+	void Create(VkDevice InDevice, uint32 InSize, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
+	{
+		Image.Create2D(InDevice, InSize, InSize, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, true, 6);
+		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_CUBE, Format, GetImageAspectFlags(Format), 6);
+	}
+
+	inline uint32 GetWidth() const
+	{
+		return Image.Width;
+	}
+
+	inline uint32 GetHeight() const
+	{
+		return Image.Height;
+	}
+};
 struct FSampler
 {
 	VkSampler Sampler = VK_NULL_HANDLE;
@@ -733,8 +759,32 @@ struct FBasePipeline
 	}
 };
 
-struct FDescriptorPool
+class FDescriptorSet
 {
+public:
+	FDescriptorSet(VkDescriptorSet InSet)
+		: Set(InSet)
+	{
+	}
+
+	void Bind(FCmdBuffer* CmdBuffer, VkPipelineBindPoint BindPoint, FBasePipeline* Pipeline)
+	{
+		vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, BindPoint, Pipeline->PipelineLayout, 0, 1, &Set, 0, nullptr);
+		UsedFence = CmdBuffer->Fence;
+		FenceCounter = CmdBuffer->Fence->FenceSignaledCounter;
+	}
+
+protected:
+	VkDescriptorSet Set = VK_NULL_HANDLE;
+	FFence* UsedFence = nullptr;
+	uint64 FenceCounter = 0;
+	friend class FWriteDescriptors;
+	friend class FDescriptorPool;
+};
+
+class FDescriptorPool
+{
+public:
 	void Create(VkDevice InDevice)
 	{
 		Device = InDevice;
@@ -773,21 +823,46 @@ struct FDescriptorPool
 		Pool = VK_NULL_HANDLE;
 	}
 
-	VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout DSLayout)
+	FDescriptorSet* AllocateDescriptorSet(VkDescriptorSetLayout DSLayout)
 	{
-		VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
-		VkDescriptorSetAllocateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		Info.descriptorPool = Pool;
-		Info.descriptorSetCount = 1;
-		Info.pSetLayouts = &DSLayout;
-		checkVk(vkAllocateDescriptorSets(Device, &Info, &DescriptorSet));
-		return DescriptorSet;
+		auto& Entries = Sets[DSLayout];
+		if (!Entries.Free.empty())
+		{
+			FDescriptorSet* Set = Entries.Free.back();
+			Entries.Free.pop_back();
+			Entries.Used.push_back(Set);
+			return Set;
+		}
+		else
+		{
+			VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
+			VkDescriptorSetAllocateInfo Info;
+			MemZero(Info);
+			Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+			Info.descriptorPool = Pool;
+			Info.descriptorSetCount = 1;
+			Info.pSetLayouts = &DSLayout;
+			checkVk(vkAllocateDescriptorSets(Device, &Info, &DescriptorSet));
+
+			auto* NewSet = new FDescriptorSet(DescriptorSet);
+			Entries.Used.push_back(NewSet);
+			return NewSet;
+		}
 	}
+
+	void UpdateDescriptors(FWriteDescriptors& InWriteDescriptors);
+	void RefreshFences();
 
 	VkDevice Device = VK_NULL_HANDLE;
 	VkDescriptorPool Pool = VK_NULL_HANDLE;
+
+protected:
+	struct FSetsPerLayout
+	{
+		std::vector<FDescriptorSet*> Used;
+		std::vector<FDescriptorSet*> Free;
+	};
+	std::map<VkDescriptorSetLayout, FSetsPerLayout> Sets;
 };
 
 struct FFramebuffer
@@ -959,6 +1034,7 @@ class FWriteDescriptors
 public:
 	~FWriteDescriptors()
 	{
+		check(bClosed);
 		for (auto* Info : BufferInfos)
 		{
 			delete Info;
@@ -970,8 +1046,9 @@ public:
 		}
 	}
 
-	inline void AddUniformBuffer(VkDescriptorSet DescSet, uint32 Binding, const FBuffer& Buffer)
+	inline void AddUniformBuffer(FDescriptorSet* DescSet, uint32 Binding, const FBuffer& Buffer)
 	{
+		check(!bClosed);
 		VkDescriptorBufferInfo* BufferInfo = new VkDescriptorBufferInfo;
 		MemZero(*BufferInfo);
 		BufferInfo->buffer = Buffer.Buffer;
@@ -982,7 +1059,7 @@ public:
 		VkWriteDescriptorSet DSWrite;
 		MemZero(DSWrite);
 		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		DSWrite.dstSet = DescSet;
+		DSWrite.dstSet = DescSet->Set;
 		DSWrite.dstBinding = Binding;
 		DSWrite.descriptorCount = 1;
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -991,13 +1068,14 @@ public:
 	}
 
 	template< typename TStruct>
-	inline void AddUniformBuffer(VkDescriptorSet DescSet, uint32 Binding, const FUniformBuffer<TStruct>& Buffer)
+	inline void AddUniformBuffer(FDescriptorSet* DescSet, uint32 Binding, const FUniformBuffer<TStruct>& Buffer)
 	{
 		AddUniformBuffer(DescSet, Binding, Buffer.Buffer);
 	}
 
-	inline void AddStorageBuffer(VkDescriptorSet DescSet, uint32 Binding, const FBuffer& Buffer)
+	inline void AddStorageBuffer(FDescriptorSet* DescSet, uint32 Binding, const FBuffer& Buffer)
 	{
+		check(!bClosed);
 		VkDescriptorBufferInfo* BufferInfo = new VkDescriptorBufferInfo;
 		MemZero(*BufferInfo);
 		BufferInfo->buffer = Buffer.Buffer;
@@ -1008,7 +1086,7 @@ public:
 		VkWriteDescriptorSet DSWrite;
 		MemZero(DSWrite);
 		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		DSWrite.dstSet = DescSet;
+		DSWrite.dstSet = DescSet->Set;
 		DSWrite.dstBinding = Binding;
 		DSWrite.descriptorCount = 1;
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1016,8 +1094,9 @@ public:
 		DSWrites.push_back(DSWrite);
 	}
 
-	inline void AddCombinedImageSampler(VkDescriptorSet DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView)
+	inline void AddCombinedImageSampler(FDescriptorSet* DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView)
 	{
+		check(!bClosed);
 		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
 		MemZero(*ImageInfo);
 		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1028,7 +1107,7 @@ public:
 		VkWriteDescriptorSet DSWrite;
 		MemZero(DSWrite);
 		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		DSWrite.dstSet = DescSet;
+		DSWrite.dstSet = DescSet->Set;
 		DSWrite.dstBinding = Binding;
 		DSWrite.descriptorCount = 1;
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1036,8 +1115,9 @@ public:
 		DSWrites.push_back(DSWrite);
 	}
 
-	inline void AddStorageImage(VkDescriptorSet DescSet, uint32 Binding, const FImageView& ImageView)
+	inline void AddStorageImage(FDescriptorSet* DescSet, uint32 Binding, const FImageView& ImageView)
 	{
+		check(!bClosed);
 		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
 		MemZero(*ImageInfo);
 		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1047,18 +1127,21 @@ public:
 		VkWriteDescriptorSet DSWrite;
 		MemZero(DSWrite);
 		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		DSWrite.dstSet = DescSet;
+		DSWrite.dstSet = DescSet->Set;
 		DSWrite.dstBinding = Binding;
 		DSWrite.descriptorCount = 1;
 		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		DSWrite.pImageInfo = ImageInfo;
 		DSWrites.push_back(DSWrite);
 	}
-	std::vector<VkWriteDescriptorSet> DSWrites;
 
 protected:
 	std::vector<VkDescriptorBufferInfo*> BufferInfos;
 	std::vector<VkDescriptorImageInfo*> ImageInfos;
+	std::vector<VkWriteDescriptorSet> DSWrites;
+	bool bClosed = false;
+
+	friend class FDescriptorPool;
 };
 
 
@@ -1102,12 +1185,6 @@ inline void BufferBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, 
 
 struct FSwapchain
 {
-	enum
-	{
-		SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM,
-		BACKBUFFER_VIEW_FORMAT = VK_FORMAT_R8G8B8A8_UNORM,
-	};
-
 	void Create(VkSurfaceKHR SurfaceKHR, VkPhysicalDevice PhysicalDevice, VkDevice InDevice, VkSurfaceKHR Surface, uint32& WindowWidth, uint32& WindowHeight);
 
 	VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
@@ -1119,6 +1196,7 @@ struct FSwapchain
 	uint32 PresentCompleteSemaphoreIndex = 0;
 	uint32 RenderingSemaphoreIndex = 0;
 	VkExtent2D SurfaceResolution;
+	VkFormat Format = VK_FORMAT_UNDEFINED;
 
 	uint32 AcquiredImageIndex = UINT32_MAX;
 

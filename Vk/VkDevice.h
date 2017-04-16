@@ -7,6 +7,8 @@
 
 #include "../Utils/Util.h"
 
+class FDescriptorPool;
+
 struct FInstance
 {
 	VkSurfaceKHR Surface = VK_NULL_HANDLE;
@@ -128,6 +130,20 @@ struct FDevice
 
 	void Create(std::vector<const char*>& Layers)
 	{
+		uint32 NumLayers;
+		vkEnumerateDeviceLayerProperties(PhysicalDevice, &NumLayers, nullptr);
+		std::vector<VkLayerProperties> DeviceLayers;
+		DeviceLayers.resize(NumLayers);
+		vkEnumerateDeviceLayerProperties(PhysicalDevice, &NumLayers, &DeviceLayers[0]);
+
+		{
+			uint32 NumExtensions;
+			vkEnumerateDeviceExtensionProperties(PhysicalDevice, nullptr, &NumExtensions, nullptr);
+			std::vector<VkExtensionProperties> DeviceExtensions;
+			DeviceExtensions.resize(NumExtensions);
+			vkEnumerateDeviceExtensionProperties(PhysicalDevice, nullptr, &NumExtensions, &DeviceExtensions[0]);
+		}
+
 		VkPhysicalDeviceFeatures DeviceFeatures;
 		vkGetPhysicalDeviceFeatures(PhysicalDevice, &DeviceFeatures);
 
@@ -139,7 +155,11 @@ struct FDevice
 		float Priorities[1] = { 1.0f };
 		QueueInfo.pQueuePriorities = Priorities;
 
-		const char* DeviceExtensions[] = { "VK_KHR_swapchain" };
+		const char* DeviceExtensions[] =
+		{
+			"VK_KHR_swapchain",
+			"VK_KHR_maintenance1",
+		};
 
 		VkDeviceCreateInfo DeviceInfo;
 		MemZero(DeviceInfo);
@@ -148,7 +168,7 @@ struct FDevice
 		DeviceInfo.pQueueCreateInfos = &QueueInfo;
 		DeviceInfo.enabledLayerCount = (uint32)Layers.size();
 		DeviceInfo.ppEnabledLayerNames = Layers.size() > 0 ? &Layers[0] : nullptr;
-		DeviceInfo.enabledExtensionCount = 1;
+		DeviceInfo.enabledExtensionCount = sizeof(DeviceExtensions) / sizeof(DeviceExtensions[0]);
 		DeviceInfo.ppEnabledExtensionNames = DeviceExtensions;
 		DeviceInfo.pEnabledFeatures = &DeviceFeatures;
 		checkVk(vkCreateDevice(PhysicalDevice, &DeviceInfo, nullptr, &Device));
@@ -582,32 +602,7 @@ struct FCmdBufferMgr
 		return AllocateCmdBuffer();
 	}
 
-	void Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
-	{
-		check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Ended);
-		check(CmdBuffer->Secondary.empty());
-		VkPipelineStageFlags StageMask[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-		VkSubmitInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		Info.pWaitDstStageMask = StageMask;
-		Info.commandBufferCount = 1;
-		Info.pCommandBuffers = &CmdBuffer->CmdBuffer;
-		if (WaitSemaphore)
-		{
-			Info.waitSemaphoreCount = 1;
-			Info.pWaitSemaphores = &WaitSemaphore->Semaphore;
-		}
-		if (SignaledSemaphore)
-		{
-			Info.signalSemaphoreCount = 1;
-			Info.pSignalSemaphores = &SignaledSemaphore->Semaphore;
-		}
-		checkVk(vkQueueSubmit(Queue, 1, &Info, CmdBuffer->Fence->Fence));
-		CmdBuffer->Fence->State = FFence::EState::NotSignaled;
-		CmdBuffer->State = FPrimaryCmdBuffer::EState::Submitted;
-		Update();
-	}
+	void Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore);
 
 	void Update()
 	{

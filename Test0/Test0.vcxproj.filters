@@ -101,5 +101,8 @@
     <None Include="..\Shaders\PostVS.vert">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="..\Shaders\BuildShaders.bat">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

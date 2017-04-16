@@ -172,7 +172,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		if (wParam != SIZE_MINIMIZED)
 		{
 			int width = lParam & 0xffff;
-			int height = lParam & 0xffff0000 >> 16;
+			int height = (lParam & 0xffff0000) >> 16;
 			DoResize(width, height);
 		}
 		break;
