@@ -1314,14 +1314,27 @@ inline void CopyBuffer(FPrimaryCmdBuffer* CmdBuffer, FBuffer* SrcBuffer, FBuffer
 }
 
 template <typename TFillLambda>
-inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
+inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer* CmdBuffer, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData)
 {
-	void* Data = StagingBuffer->GetMappedData();
-	check(Data);
-	Fill(Data);
+	void* BufferData = StagingBuffer->GetMappedData();
+	check(BufferData);
+	Fill(BufferData, UserData);
 
 	CopyBuffer(CmdBuffer, StagingBuffer, DestBuffer);
 	StagingBuffer->SetFence(CmdBuffer);
+}
+
+template <typename TFillLambda>
+void MapAndFillBufferSyncOneShotCmdBuffer(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData)
+{
+	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	CmdBuffer->Begin();
+	FStagingBuffer* StagingBuffer = GStagingManager.RequestUploadBuffer(Size);
+	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size, UserData);
+	FlushMappedBuffer(GDevice.Device, StagingBuffer);
+	CmdBuffer->End();
+	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	CmdBuffer->WaitForFence();
 }
 
 template <typename TFillLambda>

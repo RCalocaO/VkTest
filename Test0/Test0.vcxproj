@@ -151,6 +151,7 @@
     <ClInclude Include="..\Vk\Vk.h" />
     <ClInclude Include="..\Vk\VkDevice.h" />
     <ClInclude Include="..\Vk\VkMem.h" />
+    <ClInclude Include="..\Vk\VkObj.h" />
     <ClInclude Include="..\Vk\VkResources.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />

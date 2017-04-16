@@ -125,6 +125,10 @@ namespace Obj
 							{
 								VIndex = VIndex + (int32)OutObj.Vs.size();
 							}
+							else
+							{
+								--VIndex;
+							}
 							Face.Corners[Index].Pos = VIndex;
 						}
 						check(*Ptr++ == '/');
@@ -134,6 +138,10 @@ namespace Obj
 							{
 								VIndex = VIndex + (int32)OutObj.VTs.size();
 							}
+							else
+							{
+								--VIndex;
+							}
 							Face.Corners[Index].UV = VIndex;
 						}
 						check(*Ptr++ == '/');
@@ -142,6 +150,10 @@ namespace Obj
 							if (VIndex < 0)
 							{
 								VIndex = VIndex + (int32)OutObj.VNs.size();
+							}
+							else
+							{
+								--VIndex;
 							}
 							Face.Corners[Index].Normal = VIndex;
 						}

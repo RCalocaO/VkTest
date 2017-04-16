@@ -5,6 +5,7 @@
 #include "VkMem.h"
 #include "VkResources.h"
 #include "../Meshes/ObjLoader.h"
+#include "VkObj.h"
 
 // 0 no multithreading
 // 1 inside a render pass
@@ -33,9 +34,7 @@ static FSwapchain GSwapchain;
 static FDescriptorPool GDescriptorPool;
 static FStagingManager GStagingManager;
 
-
-static FVertexBuffer GObjVB;
-static Obj::FObj GObj;
+static FMesh GCube;
 static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
 struct FCreateFloorUB
@@ -249,12 +248,6 @@ FThread GThread;
 
 #endif
 
-struct FPosColorUVVertex
-{
-	float x, y, z;
-	uint32 Color;
-	float u, v;
-};
 FVertexFormat GPosColorUVFormat;
 
 bool GQuitting = false;
@@ -466,19 +459,6 @@ struct FObjectCache
 FObjectCache GObjectCache;
 
 
-template <typename TFillLambda>
-void MapAndFillBufferSyncOneShotCmdBuffer(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size)
-{
-	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
-	CmdBuffer->Begin();
-	FStagingBuffer* StagingBuffer = GStagingManager.RequestUploadBuffer(Size);
-	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size);
-	FlushMappedBuffer(GDevice.Device, StagingBuffer);
-	CmdBuffer->End();
-	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
-	CmdBuffer->WaitForFence();
-}
-
 static bool LoadShadersAndGeometry()
 {
 	static bool bDoCompile = false;
@@ -557,34 +537,11 @@ static bool LoadShadersAndGeometry()
 	GPosColorUVFormat.AddVertexAttribute(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(FPosColorUVVertex, u));
 
 	// Load and fill geometry
-	if (!Obj::Load("../Meshes/Cube/cube.obj", GObj))
+	if (!GCube.Load("../Meshes/cube/cube.obj"))
 	{
 		return false;
 	}
-	//GObj.Faces.resize(1);
-	GObjVB.Create(GDevice.Device, sizeof(FPosColorUVVertex) * GObj.Faces.size() * 3, &GMemMgr);
-
-	auto FillObj = [](void* Data)
-	{
-		check(Data);
-		auto* Vertex = (FPosColorUVVertex*)Data;
-		for (uint32 Index = 0; Index < GObj.Faces.size(); ++Index)
-		{
-			auto& Face = GObj.Faces[Index];
-			for (uint32 Corner = 0; Corner < 3; ++Corner)
-			{
-				Vertex->x = GObj.Vs[Face.Corners[Corner].Pos].x;
-				Vertex->y = GObj.Vs[Face.Corners[Corner].Pos].y;
-				Vertex->z = GObj.Vs[Face.Corners[Corner].Pos].z;
-				Vertex->Color = PackNormalToU32(GObj.VNs[Face.Corners[Corner].Normal]);
-				Vertex->u = GObj.VTs[Face.Corners[Corner].UV].u;
-				Vertex->v = GObj.VTs[Face.Corners[Corner].UV].v;
-				++Vertex;
-			}
-		}
-	};
-
-	MapAndFillBufferSyncOneShotCmdBuffer(&GObjVB.Buffer, FillObj, sizeof(FPosColorUVVertex) * (uint32)GObj.Faces.size() * 3);
+	GCube.Create(GDevice.Device, &GMemMgr);
 
 	return true;
 }
@@ -819,8 +776,8 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
-	CmdBind(CmdBuffer, &GObjVB);
-	vkCmdDraw(CmdBuffer->CmdBuffer, (uint32)GObj.Faces.size() * 3, 1, 0, 0);
+	CmdBind(CmdBuffer, &GCube.ObjVB);
+	vkCmdDraw(CmdBuffer->CmdBuffer, (uint32)GCube.Obj.Faces.size() * 3, 1, 0, 0);
 }
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
@@ -1107,7 +1064,7 @@ void DoDeinit()
 	GViewUB.Destroy();
 	GCreateFloorUB.Destroy();
 	GObjUB.Destroy();
-	GObjVB.Destroy();
+	GCube.Destroy();
 	GIdentityUB.Destroy();
 
 	GSampler.Destroy();
