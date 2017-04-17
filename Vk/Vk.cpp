@@ -311,13 +311,14 @@ struct FObjectCache
 	{
 		FFramebuffer* Framebuffer;
 
-		FFrameBufferEntry(VkRenderPass InRenderPass, uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkImageView* InColorViews, VkImageView InDepthStencilView, VkImageView InResolveColor)
+		FFrameBufferEntry(VkRenderPass InRenderPass, uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkImageView* InColorViews, VkImageView InDepthStencilView, VkImageView InResolveColor, VkImageView InResolveDepth)
 			: RenderPass(InRenderPass)
 			, Width(InWidth)
 			, Height(InHeight)
 			, NumColorTargets(InNumColorTargets)
 			, DepthStencilView(InDepthStencilView)
 			, ResolveColor(InResolveColor)
+			, ResolveDepth(InResolveDepth)
 		{
 			for (uint32 Index = 0; Index < InNumColorTargets; ++Index)
 			{
@@ -331,7 +332,8 @@ struct FObjectCache
 		uint32 NumColorTargets = 0;
 		VkImageView ColorViews[FRenderPassLayout::MAX_COLOR_ATTACHMENTS];
 		VkImageView DepthStencilView = VK_NULL_HANDLE;
-		VkImageView ResolveColor;
+		VkImageView ResolveColor = VK_NULL_HANDLE;
+		VkImageView ResolveDepth = VK_NULL_HANDLE;
 	};
 	std::vector<FFrameBufferEntry> Framebuffers;
 
@@ -340,20 +342,20 @@ struct FObjectCache
 		Device = InDevice;
 	}
 
-	FFramebuffer* GetOrCreateFramebuffer(VkRenderPass RenderPass, VkImageView Color, VkImageView DepthStencil, uint32 Width, uint32 Height, VkImageView ResolveColor = VK_NULL_HANDLE)
+	FFramebuffer* GetOrCreateFramebuffer(VkRenderPass RenderPass, VkImageView Color, VkImageView DepthStencil, uint32 Width, uint32 Height, VkImageView ResolveColor = VK_NULL_HANDLE, VkImageView ResolveDepth = VK_NULL_HANDLE)
 	{
 		for (auto& Entry : Framebuffers)
 		{
-			if (Entry.RenderPass == RenderPass && Entry.NumColorTargets == 1 && Entry.ColorViews[0] == Color && Entry.DepthStencilView == DepthStencil && Entry.Width == Width && Entry.Height == Height && Entry.ResolveColor == ResolveColor)
+			if (Entry.RenderPass == RenderPass && Entry.NumColorTargets == 1 && Entry.ColorViews[0] == Color && Entry.DepthStencilView == DepthStencil && Entry.Width == Width && Entry.Height == Height && Entry.ResolveColor == ResolveColor && Entry.ResolveDepth == ResolveDepth)
 			{
 				return Entry.Framebuffer;
 			}
 		}
 
-		FFrameBufferEntry Entry(RenderPass, Width, Height, 1, &Color, DepthStencil, ResolveColor);
+		FFrameBufferEntry Entry(RenderPass, Width, Height, 1, &Color, DepthStencil, ResolveColor, ResolveDepth);
 
 		auto* NewFramebuffer = new FFramebuffer;
-		NewFramebuffer->Create(Device->Device, RenderPass, Color, DepthStencil, Width, Height, ResolveColor);
+		NewFramebuffer->Create(Device->Device, RenderPass, Color, DepthStencil, Width, Height, ResolveColor, ResolveDepth);
 		Entry.Framebuffer = NewFramebuffer;
 		Framebuffers.push_back(Entry);
 		return NewFramebuffer;
@@ -412,9 +414,9 @@ struct FObjectCache
 		return NewPipeline;
 	}
 
-	FRenderPass* GetOrCreateRenderPass(uint32 Width, uint32 Height, uint32 NumColorTargets, VkFormat* ColorFormats, VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT, FImage2DWithView* ResolveColorBuffer = nullptr)
+	FRenderPass* GetOrCreateRenderPass(uint32 Width, uint32 Height, uint32 NumColorTargets, VkFormat* ColorFormats, VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT, FImage2DWithView* ResolveColorBuffer = nullptr, FImage2DWithView* ResolveDepth = nullptr)
 	{
-		FRenderPassLayout Layout(Width, Height, NumColorTargets, ColorFormats, DepthStencilFormat, InNumSamples, ResolveColorBuffer ? ResolveColorBuffer->GetFormat() : VK_FORMAT_UNDEFINED);
+		FRenderPassLayout Layout(Width, Height, NumColorTargets, ColorFormats, DepthStencilFormat, InNumSamples, ResolveColorBuffer ? ResolveColorBuffer->GetFormat() : VK_FORMAT_UNDEFINED, ResolveDepth ? ResolveDepth->GetFormat() : VK_FORMAT_UNDEFINED);
 		auto LayoutHash = Layout.GetHash();
 		auto Found = RenderPasses.find(LayoutHash);
 		if (Found != RenderPasses.end())
@@ -870,15 +872,15 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 #endif
 }
 
-static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, FImage2DWithView* ColorBuffer, FImage2DWithView* DepthBuffer, FImage2DWithView* ResolveColorBuffer)
+static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, FImage2DWithView* ColorBuffer, FImage2DWithView* DepthBuffer, FImage2DWithView* ResolveColorBuffer, FImage2DWithView* ResolveDepth)
 {
 	UpdateCamera();
 
 	FillFloor(CmdBuffer);
 
 	VkFormat ColorFormat = ColorBuffer->GetFormat();
-	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(ColorBuffer->GetWidth(), ColorBuffer->GetHeight(), 1, &ColorFormat, DepthBuffer->GetFormat(), ColorBuffer->Image.Samples, ResolveColorBuffer);
-	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorBuffer->GetImageView(), DepthBuffer->GetImageView(), ColorBuffer->GetWidth(), ColorBuffer->GetHeight(), ResolveColorBuffer ? ResolveColorBuffer->GetImageView() : VK_NULL_HANDLE);
+	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(ColorBuffer->GetWidth(), ColorBuffer->GetHeight(), 1, &ColorFormat, DepthBuffer->GetFormat(), ColorBuffer->Image.Samples, ResolveColorBuffer, ResolveDepth);
+	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorBuffer->GetImageView(), DepthBuffer->GetImageView(), ColorBuffer->GetWidth(), ColorBuffer->GetHeight(), ResolveColorBuffer ? ResolveColorBuffer->GetImageView() : VK_NULL_HANDLE, ResolveDepth ? ResolveDepth->GetImageView() : VK_NULL_HANDLE);
 
 	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED == 1);
 #if TRY_MULTITHREADED == 1
@@ -1006,15 +1008,21 @@ void DoRender()
 		auto* ResolvedSceneColor = GRenderTargetPool.Acquire("SceneColor", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
 		ResolvedSceneColor->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-		RenderFrame(GDevice.Device, CmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, &ResolvedSceneColor->Texture);
+		auto* ResolvedDepth = GRenderTargetPool.Acquire("Depth", GSwapchain.GetWidth(), GSwapchain.GetHeight(), DepthBuffer->Texture.GetFormat(), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
+		ResolvedDepth->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+		RenderFrame(GDevice.Device, CmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, &ResolvedSceneColor->Texture, &ResolvedDepth->Texture);
 
 		auto* MSAA = SceneColor;
 		GRenderTargetPool.Release(MSAA);
 		SceneColor = ResolvedSceneColor;
+		MSAA = DepthBuffer;
+		GRenderTargetPool.Release(MSAA);
+		DepthBuffer = ResolvedDepth;
 	}
 	else
 	{
-		RenderFrame(GDevice.Device, CmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, nullptr);
+		RenderFrame(GDevice.Device, CmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, nullptr, nullptr);
 	}
 	GRenderTargetPool.Release(DepthBuffer);
 

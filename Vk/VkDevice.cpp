@@ -324,7 +324,7 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 		Desc.format = Layout.ColorFormats[Index];
 		Desc.samples = Layout.NumSamples;
 		Desc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		Desc.storeOp = (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED) ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
+		Desc.storeOp = (InLayout.ResolveColorFormat != VK_FORMAT_UNDEFINED) ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
 		Desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		Desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		Desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -360,7 +360,7 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 		AttachmentReferences.push_back(Reference);
 	}
 
-	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
+	if (InLayout.ResolveColorFormat != VK_FORMAT_UNDEFINED)
 	{
 		VkAttachmentDescription Desc;
 		MemZero(Desc);
@@ -381,34 +381,36 @@ void FRenderPass::Create(VkDevice InDevice, const FRenderPassLayout& InLayout)
 		ResolveReferences.push_back(Reference);
 	}
 
-/*
-	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
+	if (InLayout.ResolveDepthFormat != VK_FORMAT_UNDEFINED)
 	{
-		CurrentDesc->format = Layout.ResolveFormat;
-		CurrentDesc->samples = VK_SAMPLE_COUNT_1_BIT;
-		CurrentDesc->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		CurrentDesc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		CurrentDesc->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		CurrentDesc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		CurrentDesc->initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		CurrentDesc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VkAttachmentDescription Desc;
+		MemZero(Desc);
+		Desc.format = Layout.DepthStencilFormat;
+		Desc.samples = VK_SAMPLE_COUNT_1_BIT;
+		Desc.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		Desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Desc.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		Desc.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		Descriptions.push_back(Desc);
 
-		ResolveRef.attachment = Index;
-		ResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		++CurrentDesc;
-		++Index;
+		VkAttachmentReference Reference;
+		MemZero(Reference);
+		Reference.attachment = (uint32)Descriptions.size() - 1;
+		Reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		ResolveReferences.push_back(Reference);
 	}
-*/
+
 	VkSubpassDescription Subpass;
 	MemZero(Subpass);
 	Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	Subpass.colorAttachmentCount = Layout.NumColorTargets;
 	Subpass.pColorAttachments = &AttachmentReferences[0];
-	Subpass.pResolveAttachments = (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED) ? &ResolveReferences[0] : nullptr;
+	Subpass.pResolveAttachments = (InLayout.ResolveColorFormat != VK_FORMAT_UNDEFINED || InLayout.ResolveDepthFormat != VK_FORMAT_UNDEFINED) ? &ResolveReferences[0] : nullptr;
 	Subpass.pDepthStencilAttachment = DepthReferenceIndex != -1 ? &AttachmentReferences[DepthReferenceIndex] : nullptr;
 
-	if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
+	//if (InLayout.ResolveFormat != VK_FORMAT_UNDEFINED)
 	{
 		//Subpass.pResolveAttachments = &ResolveRef;
 	}
