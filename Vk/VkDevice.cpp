@@ -40,7 +40,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 				"VK_LAYER_LUNARG_swapchain",
 				"VK_LAYER_GOOGLE_threading",
 				"VK_LAYER_GOOGLE_unique_objects",
-				//"VK_LAYER_RENDERDOC_Capture",
+				"VK_LAYER_RENDERDOC_Capture",
 			};
 
 			for (auto* DesiredLayer : UseValidationLayers)
@@ -455,7 +455,7 @@ FGfxPipeline::FGfxPipeline()
 	//RSInfo.depthClampEnable = VK_FALSE;
 	//RSInfo.rasterizerDiscardEnable = VK_FALSE;
 	RSInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	RSInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	RSInfo.cullMode = VK_CULL_MODE_NONE;//VK_CULL_MODE_BACK_BIT;
 	RSInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	//RSInfo.depthBiasEnable = VK_FALSE;
 	//RSInfo.depthBiasConstantFactor = 0;
@@ -1015,7 +1015,7 @@ void FDescriptorPool::UpdateDescriptors(FWriteDescriptors& InWriteDescriptors)
 }
 
 
-void FCmdBufferMgr::Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
+void FCmdBufferMgr::Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
 {
 	check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Ended);
 	check(CmdBuffer->Secondary.empty());
@@ -1040,5 +1040,10 @@ void FCmdBufferMgr::Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* C
 	CmdBuffer->Fence->State = FFence::EState::NotSignaled;
 	CmdBuffer->State = FPrimaryCmdBuffer::EState::Submitted;
 	Update();
+}
+
+void FCmdBufferMgr::Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
+{
+	Submit(CmdBuffer, Queue, WaitSemaphore, SignaledSemaphore);
 	DescriptorPool.RefreshFences();
 }

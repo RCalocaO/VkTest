@@ -1325,15 +1325,15 @@ inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffe
 }
 
 template <typename TFillLambda>
-void MapAndFillBufferSyncOneShotCmdBuffer(FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData)
+void MapAndFillBufferSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData)
 {
-	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	auto* CmdBuffer = CmdBufferMgr->AllocateCmdBuffer();
 	CmdBuffer->Begin();
-	FStagingBuffer* StagingBuffer = GStagingManager.RequestUploadBuffer(Size);
+	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size);
 	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size, UserData);
-	FlushMappedBuffer(GDevice.Device, StagingBuffer);
+	FlushMappedBuffer(Device->Device, StagingBuffer);
 	CmdBuffer->End();
-	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+	CmdBufferMgr->Submit(CmdBuffer, Device->PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
 }
 

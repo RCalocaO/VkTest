@@ -7,6 +7,8 @@
 #include "../Meshes/ObjLoader.h"
 #include "VkObj.h"
 
+#define USE_SPONZA 0
+
 // 0 no multithreading
 // 1 inside a render pass
 // 2 run post
@@ -35,6 +37,7 @@ static FDescriptorPool GDescriptorPool;
 static FStagingManager GStagingManager;
 
 static FMesh GCube;
+static FMesh GSponza;
 static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
 struct FCreateFloorUB
@@ -541,7 +544,15 @@ static bool LoadShadersAndGeometry()
 	{
 		return false;
 	}
-	GCube.Create(GDevice.Device, &GMemMgr);
+	GCube.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+
+#if USE_SPONZA
+	if (!GSponza.Load("../Meshes/sponza/sponza.obj"))
+	{
+		return false;
+	}
+	GSponza.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+#endif
 
 	return true;
 }
@@ -777,7 +788,26 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
 	CmdBind(CmdBuffer, &GCube.ObjVB);
-	vkCmdDraw(CmdBuffer->CmdBuffer, (uint32)GCube.Obj.Faces.size() * 3, 1, 0, 0);
+	vkCmdDraw(CmdBuffer->CmdBuffer, GCube.GetNumVertices(), 1, 0, 0);
+}
+
+static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+{
+	FObjUB& ObjUB = *GObjUB.GetMappedData();
+	ObjUB.Obj = FMatrix4x4::GetIdentity();
+
+	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+
+	FWriteDescriptors WriteDescriptors;
+	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
+	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+
+	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
+
+	CmdBind(CmdBuffer, &GSponza.ObjVB);
+	vkCmdDraw(CmdBuffer->CmdBuffer, GSponza.GetNumVertices(), 1, 0, 0);
 }
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
@@ -832,8 +862,12 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 
 	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);
 
+#if USE_SPONZA
+	DrawSponza(GfxPipeline, Device, CmdBuffer);
+#else
 	DrawFloor(GfxPipeline, Device, CmdBuffer);
 	DrawCube(GfxPipeline, Device, CmdBuffer);
+#endif
 }
 
 static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, FImage2DWithView* ColorBuffer, FImage2DWithView* DepthBuffer, FImage2DWithView* ResolveColorBuffer)
@@ -1065,6 +1099,9 @@ void DoDeinit()
 	GCreateFloorUB.Destroy();
 	GObjUB.Destroy();
 	GCube.Destroy();
+#if USE_SPONZA
+	GSponza.Destroy();
+#endif
 	GIdentityUB.Destroy();
 
 	GSampler.Destroy();

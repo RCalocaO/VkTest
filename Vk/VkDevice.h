@@ -603,6 +603,7 @@ struct FCmdBufferMgr
 	}
 
 	void Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore);
+	void Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore);
 
 	void Update()
 	{
