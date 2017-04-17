@@ -788,7 +788,8 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
 	CmdBind(CmdBuffer, &GCube.ObjVB);
-	vkCmdDraw(CmdBuffer->CmdBuffer, GCube.GetNumVertices(), 1, 0, 0);
+	CmdBind(CmdBuffer, &GCube.ObjIB);
+	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, GCube.GetNumIndices(), 1, 0, 0, 0);
 }
 
 static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)

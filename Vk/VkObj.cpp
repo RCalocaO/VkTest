@@ -70,34 +70,20 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 
 	ObjVB.Create(Device->Device, sizeof(FPosColorUVVertex) * NumVertices, MemMgr);
 
-	auto FillObj = [&](void* VertexData, /*void* IndexData, */void* UserData)
+	auto FillVB = [&](void* VertexData, void* UserData)
 	{
-		auto* Mesh = (FTinyObj*)UserData;
-		auto* Vertex = (FPosColorUVVertex*)VertexData;
-		memcpy(Vertex, &Vertices[0], NumVertices * sizeof(FPosColorUVVertex));
-/*
-		for (auto& Shape : Mesh->shapes)
-		{
-			for (auto& index : Shape.mesh.indices)
-			{
-				Vertex->x = Mesh->attrib.vertices[3 * index.vertex_index + 0];
-				Vertex->y = Mesh->attrib.vertices[3 * index.vertex_index + 1];
-				Vertex->z = Mesh->attrib.vertices[3 * index.vertex_index + 2];
-				Vertex->Color = PackNormalToU32(
-					FVector3({
-					Mesh->attrib.normals[3 * index.normal_index + 0],
-					Mesh->attrib.normals[3 * index.normal_index + 1],
-					Mesh->attrib.normals[3 * index.normal_index + 2] })
-				);
-				Vertex->u = Mesh->attrib.texcoords[2 * index.texcoord_index + 0];
-				Vertex->v = Mesh->attrib.texcoords[2 * index.texcoord_index + 1];
-				++Vertex;
-			}
-		}
-*/
+		memcpy(VertexData, &Vertices[0], NumVertices * sizeof(FPosColorUVVertex));
 	};
+	MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &ObjVB.Buffer, FillVB, sizeof(FPosColorUVVertex) * NumVertices, this);
 
-	MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &ObjVB.Buffer, FillObj, sizeof(FPosColorUVVertex) * GetNumVertices(), this);
+	NumIndices = (uint32)Indices.size();
+	ObjIB.Create(Device->Device, NumIndices, VK_INDEX_TYPE_UINT32, MemMgr);
+
+	auto FillIB = [&](void* IndexData, void* UserData)
+	{
+		memcpy(IndexData, &Indices[0], NumIndices * sizeof(uint32));
+	};
+	MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &ObjIB.Buffer, FillIB, sizeof(uint32) * NumIndices, this);
 }
 
 bool FMesh::Load(const char* Filename)

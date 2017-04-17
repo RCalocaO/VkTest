@@ -32,12 +32,16 @@ struct FTinyObj;
 struct FMesh
 {
 	FVertexBuffer ObjVB;
+	FIndexBuffer ObjIB;
+
 	uint32 NumVertices = 0;
+	uint32 NumIndices = 0;
 
 	void Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr);
 
 	void Destroy()
 	{
+		ObjIB.Destroy();
 		ObjVB.Destroy();
 	}
 
@@ -46,6 +50,11 @@ struct FMesh
 	uint32 GetNumVertices() const
 	{
 		return NumVertices;
+	}
+
+	uint32 GetNumIndices() const
+	{
+		return NumIndices;
 	}
 
 	FTinyObj* Loaded = nullptr;
