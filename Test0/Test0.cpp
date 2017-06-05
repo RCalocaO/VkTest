@@ -134,10 +134,12 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //  WM_DESTROY  - post a quit message and return
 //
 //
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
+	static bool bLButton = false;
+	static bool bRButton = false;
 	static bool bDestroyed = false;
-	switch (message)
+	switch (Message)
 	{
 	case WM_COMMAND:
 		{
@@ -152,7 +154,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				DestroyWindow(hWnd);
 				break;
 			default:
-				return DefWindowProc(hWnd, message, wParam, lParam);
+				return DefWindowProc(hWnd, Message, wParam, lParam);
 			}
 		}
 		break;
@@ -207,7 +209,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_KEYDOWN:
 	case WM_KEYUP:
 		{
-			float UpDown = (message == WM_KEYUP) ? 0 : 1.0f;
+			float UpDown = (Message == WM_KEYUP) ? 0 : 1.0f;
 			int Key = LOWORD(wParam);
 			switch (Key)
 			{
@@ -239,6 +241,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 
+	case WM_RBUTTONDOWN:
+		bRButton = true;
+		GRequestControl.MouseMoveX = 0;
+		GRequestControl.MouseMoveY = 0;
+		GRequestControl.StepDirection = {0, 0, 0};
+		break;
+
+	case WM_RBUTTONUP:
+		bRButton = false;
+		GRequestControl.MouseMoveX = 0;
+		GRequestControl.MouseMoveY = 0;
+		GRequestControl.StepDirection = { 0, 0, 0 };
+		break;
+
+	case WM_LBUTTONDOWN:
+		bLButton = true;
+		GRequestControl.MouseMoveX = 0;
+		GRequestControl.MouseMoveY = 0;
+		GRequestControl.StepDirection = { 0, 0, 0 };
+		break;
+
+	case WM_LBUTTONUP:
+		bLButton = false;
+		GRequestControl.MouseMoveX = 0;
+		GRequestControl.MouseMoveY = 0;
+		GRequestControl.StepDirection = { 0, 0, 0 };
+		break;
+
 	case WM_MOUSEMOVE:
 		{
 			if (hWnd == GMainWindow)
@@ -249,8 +279,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				static int32 OldY = Y;
 				int32 DeltaX = X - OldX;
 				int32 DeltaY = Y - OldY;
-				GRequestControl.MouseMoveX = DeltaX;
-				GRequestControl.MouseMoveY = DeltaY;
+
+				if (bRButton)
+				{
+					GRequestControl.StepDirection.x = (float)DeltaX;
+					GRequestControl.StepDirection.y = (float)DeltaY;
+				}
+				else if (bLButton)
+				{
+					GRequestControl.MouseMoveX = DeltaX;
+					GRequestControl.MouseMoveY = DeltaY;
+				}
 				OldX = X;
 				OldY = Y;
 			}
@@ -263,7 +302,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		PostQuitMessage(0);
 		break;
 	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
+		return DefWindowProc(hWnd, Message, wParam, lParam);
 	}
 	return 0;
 }
