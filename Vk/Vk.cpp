@@ -7,7 +7,11 @@
 #include "../Meshes/ObjLoader.h"
 #include "VkObj.h"
 
-#define USE_SPONZA 0
+#include "../Utils/glm/glm/vec4.hpp"
+#include "../Utils/glm/glm/mat4x4.hpp"
+#include "../Utils/glm/glm/gtc/matrix_transform.hpp"
+
+#define USE_SPONZA 1
 
 // 0 no multithreading
 // 1 inside a render pass
@@ -25,8 +29,40 @@ FControl::FControl()
 
 FControl GRequestControl;
 FControl GControl;
+const float PI = 3.14159265358979323846f;
 
-FVector4 GCameraPos = {0, 0, -10, 1};
+struct FCamera
+{
+	FVector3 Pos;
+	float YRotation = 0;
+	float XRotation = 0;
+	float FOV = 45;
+
+	FCamera()
+	{
+		Pos.Set(0, 0, -10);
+	}
+	
+	FMatrix4x4 GetViewMatrix()
+	{
+		glm::mat4 View;
+		View = glm::rotate(View, YRotation, glm::vec3(-1.0f, 0.0f, 0.0f));
+		View = glm::rotate(View, XRotation, glm::vec3(0.0f, 1.0f, 0.0f));
+		FMatrix4x4 M = FMatrix4x4::GetIdentity();
+		M = *(FMatrix4x4*)&View;
+		/*
+		float Yaw = YRotation;
+		float Pitch = XRotation;
+		M.Rows[0].Set(cos(Yaw), 0, -sin(Yaw), 0);
+		M.Rows[1].Set(sin(Yaw) * sin(Pitch), cos(Pitch), cos(Yaw) * sin(Pitch), 0);
+		M.Rows[2].Set(sin(Yaw) * cos(Pitch), -sin(Pitch), cos(Pitch) * cos(Yaw), 0);
+		M = M.GetTranspose();
+*/
+		return M;
+	}
+
+};
+static FCamera GCamera;
 
 static FInstance GInstance;
 static FDevice GDevice;
@@ -547,7 +583,7 @@ static bool LoadShadersAndGeometry()
 	GCube.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
 
 #if USE_SPONZA
-	if (!GSponza.Load("../Meshes/sponza/sponza.obj"))
+	if (!GSponza.Load("../Meshes/DabrovicSponza/sponza.obj"))
 	{
 		return false;
 	}
@@ -846,12 +882,21 @@ static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Hei
 static void UpdateCamera()
 {
 	FViewUB& ViewUB = *GViewUB.GetMappedData();
-	ViewUB.View = FMatrix4x4::GetIdentity();
-	//ViewUB.View.Values[3 * 4 + 2] = -10;
-	GCameraPos = GCameraPos.Add(GControl.StepDirection.Mul(0.01f));
-	GRequestControl.StepDirection = {0, 0, 0};
+	static const float RotateSpeed = 0.05f;
+	static const float StepSpeed = 0.005f;
+	GCamera.XRotation += (GControl.MouseMoveX * PI / 180.0f) * RotateSpeed;
+	GCamera.YRotation += (GControl.MouseMoveY * PI / 180.0f) * RotateSpeed;
+	//char s[256];
+	//sprintf(s, "%d %d\n", GControl.MouseMoveX, GControl.MouseMoveY);
+	//::OutputDebugStringA(s);
+	ViewUB.View = GCamera.GetViewMatrix();
+	//float Speed = 0.05f;
+	GCamera.Pos = GCamera.Pos.Add(GControl.StepDirection.Mul(StepSpeed));
+	//GRequestControl.StepDirection = {0, 0, 0};
+	GRequestControl.MouseMoveX = 0;
+	GRequestControl.MouseMoveY = 0;
 	GControl.StepDirection ={0, 0, 0};
-	ViewUB.View.Rows[3] = GCameraPos;
+	ViewUB.View.Rows[3] = FVector4(GCamera.Pos, 1);
 	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
 }
 
@@ -1045,8 +1090,8 @@ void DoRender()
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	{
-		uint32 Width = min(GSwapchain.GetWidth(), SceneColor->Texture.GetWidth());
-		uint32 Height = min(GSwapchain.GetHeight(), SceneColor->Texture.GetHeight());
+		uint32 Width = std::min(GSwapchain.GetWidth(), SceneColor->Texture.GetWidth());
+		uint32 Height = std::min(GSwapchain.GetHeight(), SceneColor->Texture.GetHeight());
 		SceneColor->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		BlitColorImage(CmdBuffer, Width, Height, SceneColor->Texture.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
 		GRenderTargetPool.Release(SceneColor);

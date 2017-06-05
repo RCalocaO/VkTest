@@ -2,9 +2,10 @@
 
 #include "stdafx.h"
 #include "VkObj.h"
-#include <unordered_map>
 
-//#pragma optimize( "gt", on )
+#pragma optimize( "gt", on )
+
+#include <unordered_map>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "../Meshes/tiny_obj_loader.h"
@@ -43,26 +44,30 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 			Vertex.x = Loaded->attrib.vertices[3 * index.vertex_index + 0];
 			Vertex.y = Loaded->attrib.vertices[3 * index.vertex_index + 1];
 			Vertex.z = Loaded->attrib.vertices[3 * index.vertex_index + 2];
-			Vertex.Color = PackNormalToU32(
-				FVector3({
-				Loaded->attrib.normals[3 * index.normal_index + 0],
-				Loaded->attrib.normals[3 * index.normal_index + 1],
-				Loaded->attrib.normals[3 * index.normal_index + 2] })
-				);
+			if (index.normal_index != -1)
+			{
+				Vertex.Color = PackNormalToU32(
+					FVector3({
+					Loaded->attrib.normals[3 * index.normal_index + 0],
+					Loaded->attrib.normals[3 * index.normal_index + 1],
+					Loaded->attrib.normals[3 * index.normal_index + 2] })
+					);
+			}
 			Vertex.u = Loaded->attrib.texcoords[2 * index.texcoord_index + 0];
 			Vertex.v = Loaded->attrib.texcoords[2 * index.texcoord_index + 1];
 
-			if (uniqueVertices.count(Vertex) == 0)
+			//if (uniqueVertices.count(Vertex) == 0)
 			{				
 				uint32 VertexIndex = (uint32)Vertices.size();
 				uniqueVertices[Vertex] = VertexIndex;
 				Vertices.push_back(Vertex);
 				Indices.push_back(VertexIndex);
 			}
+/*
 			else
 			{
 				Indices.push_back(uniqueVertices[Vertex]);
-			}
+			}*/
 		}
 	}
 

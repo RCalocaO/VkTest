@@ -11,6 +11,7 @@
 HINSTANCE hInst;                                // current instance
 WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+static HWND GMainWindow = 0;
 
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -34,7 +35,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	MyRegisterClass(hInstance);
 
 	// Perform application initialization:
-	if (!InitInstance (hInstance, nCmdShow))
+	if (!InitInstance(hInstance, nCmdShow))
 	{
 		return FALSE;
 	}
@@ -105,6 +106,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    {
 	  return FALSE;
    }
+
+   GMainWindow = hWnd;
 
    RECT Rect;
    GetWindowRect(hWnd, &Rect);
@@ -204,28 +207,52 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_KEYDOWN:
 	case WM_KEYUP:
 		{
-			int UpDown = (message == WM_KEYUP) ? 0 : 1;
+			float UpDown = (message == WM_KEYUP) ? 0 : 1.0f;
 			int Key = LOWORD(wParam);
 			switch (Key)
 			{
 			case VK_UP:
 			case 'W':
-				GRequestControl.StepDirection.z = 1.0f * Key;
+				GRequestControl.StepDirection.z = UpDown * Key;
 				break;
 			case VK_DOWN:
 			case 'S':
-				GRequestControl.StepDirection.z = -1.0f * Key;
+				GRequestControl.StepDirection.z = -UpDown * Key;
 				break;
 			case VK_LEFT:
 			case 'A':
-				GRequestControl.StepDirection.x = 1.0f * Key;
+				GRequestControl.StepDirection.x = UpDown * Key;
 				break;
 			case VK_RIGHT:
 			case 'D':
-				GRequestControl.StepDirection.x = -1.0f * Key;
+				GRequestControl.StepDirection.x = -UpDown * Key;
+				break;
+			case 'Q':
+				GRequestControl.StepDirection.y = UpDown * Key;
+				break;
+			case 'E':
+				GRequestControl.StepDirection.y = -UpDown * Key;
 				break;
 			default:
 				break;
+			}
+		}
+		break;
+
+	case WM_MOUSEMOVE:
+		{
+			if (hWnd == GMainWindow)
+			{
+				int32 X = LOWORD(lParam);
+				int32 Y = HIWORD(lParam);
+				static int32 OldX = X;
+				static int32 OldY = Y;
+				int32 DeltaX = X - OldX;
+				int32 DeltaY = Y - OldY;
+				GRequestControl.MouseMoveX = DeltaX;
+				GRequestControl.MouseMoveY = DeltaY;
+				OldX = X;
+				OldY = Y;
 			}
 		}
 		break;

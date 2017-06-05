@@ -15,6 +15,8 @@ struct FControl
 	FVector3 StepDirection;
 	FVector4 CameraPos;
 	EViewMode ViewMode;
+	int32 MouseMoveX = 0;
+	int32 MouseMoveY = 0;
 	bool DoPost;
 	bool DoMSAA;
 

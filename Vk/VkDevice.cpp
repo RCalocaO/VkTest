@@ -40,7 +40,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 				"VK_LAYER_LUNARG_swapchain",
 				"VK_LAYER_GOOGLE_threading",
 				"VK_LAYER_GOOGLE_unique_objects",
-				"VK_LAYER_RENDERDOC_Capture",
+				//"VK_LAYER_RENDERDOC_Capture",
 			};
 
 			for (auto* DesiredLayer : UseValidationLayers)
