@@ -870,19 +870,32 @@ struct FFramebuffer
 	VkFramebuffer Framebuffer = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
 
-	void Create(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, VkImageView DepthAttachment, uint32 InWidth, uint32 InHeight, VkImageView ResolveColor)
+	void Create(VkDevice InDevice, VkRenderPass RenderPass, VkImageView ColorAttachment, VkImageView DepthAttachment, uint32 InWidth, uint32 InHeight, VkImageView ResolveColor, VkImageView ResolveDepth)
 	{
 		Device = InDevice;
 		Width = InWidth;
 		Height = InHeight;
 
-		VkImageView Attachments[3] = { ColorAttachment, DepthAttachment, ResolveColor};
+		VkImageView Attachments[4] = { ColorAttachment, DepthAttachment, VK_NULL_HANDLE, VK_NULL_HANDLE};
+
+		uint32 NumAttachments = 1 + (DepthAttachment != VK_NULL_HANDLE ? 1 : 0);
+		if (ResolveColor != VK_NULL_HANDLE)
+		{
+			Attachments[NumAttachments] = ResolveColor;
+			++NumAttachments;
+		}
+
+		if (ResolveDepth != VK_NULL_HANDLE)
+		{
+			Attachments[NumAttachments] = ResolveDepth;
+			++NumAttachments;
+		}
 
 		VkFramebufferCreateInfo CreateInfo;
 		MemZero(CreateInfo);
 		CreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		CreateInfo.renderPass = RenderPass;
-		CreateInfo.attachmentCount = 1 + (DepthAttachment != VK_NULL_HANDLE ? 1 : 0) + (ResolveColor != VK_NULL_HANDLE ? 1 : 0);
+		CreateInfo.attachmentCount = NumAttachments;
 		CreateInfo.pAttachments = Attachments;
 		CreateInfo.width = Width;
 		CreateInfo.height = Height;
@@ -907,13 +920,15 @@ public:
 	FRenderPassLayout() {}
 
 	FRenderPassLayout(uint32 InWidth, uint32 InHeight, uint32 InNumColorTargets, VkFormat* InColorFormats,
-		VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT, VkFormat InResolveFormat = VK_FORMAT_UNDEFINED)
+		VkFormat InDepthStencilFormat = VK_FORMAT_UNDEFINED, VkSampleCountFlagBits InNumSamples = VK_SAMPLE_COUNT_1_BIT,
+		VkFormat InResolveColorFormat = VK_FORMAT_UNDEFINED, VkFormat InResolveDepthFormat = VK_FORMAT_UNDEFINED)
 		: Width(InWidth)
 		, Height(InHeight)
 		, NumColorTargets(InNumColorTargets)
 		, DepthStencilFormat(InDepthStencilFormat)
 		, NumSamples(InNumSamples)
-		, ResolveFormat(InResolveFormat)
+		, ResolveColorFormat(InResolveColorFormat)
+		, ResolveDepthFormat(InResolveDepthFormat)
 	{
 		Hash = Width | (Height << 16) | ((uint64)NumColorTargets << (uint64)33);
 		Hash |= ((uint64)DepthStencilFormat << (uint64)56);
@@ -928,7 +943,8 @@ public:
 		}
 
 		Hash ^= ((uint64)ColorHash << (uint64)40);
-		Hash ^= ((uint64)ResolveFormat << (uint64)42);
+		Hash ^= ((uint64)ResolveColorFormat << (uint64)42);
+		Hash ^= ((uint64)ResolveDepthFormat << (uint64)44);
 	}
 
 	inline uint64 GetHash() const
@@ -953,7 +969,8 @@ protected:
 	VkFormat ColorFormats[MAX_COLOR_ATTACHMENTS];
 	VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED;	// Undefined means no Depth/Stencil
 	VkSampleCountFlagBits NumSamples = VK_SAMPLE_COUNT_1_BIT;
-	VkFormat ResolveFormat = VK_FORMAT_UNDEFINED;
+	VkFormat ResolveColorFormat = VK_FORMAT_UNDEFINED;
+	VkFormat ResolveDepthFormat = VK_FORMAT_UNDEFINED;
 
 	uint64 Hash = 0;
 
