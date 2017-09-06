@@ -14,6 +14,7 @@ struct FInstance
 	VkSurfaceKHR Surface = VK_NULL_HANDLE;
 	VkInstance Instance = VK_NULL_HANDLE;
 	VkDebugReportCallbackEXT DebugReportCB = VK_NULL_HANDLE;
+	HWND Window;
 
 	std::vector<const char*> Layers;
 
@@ -62,6 +63,7 @@ struct FInstance
 		SurfaceInfo.hinstance = hInstance;
 		SurfaceInfo.hwnd = hWnd;
 		checkVk(vkCreateWin32SurfaceKHR(Instance, &SurfaceInfo, nullptr, &Surface));
+		Window = hWnd;
 	}
 
 	void DestroySurface()
@@ -444,6 +446,12 @@ protected:
 	uint64 FenceSignaledCounter;
 
 public:
+	FCmdBufferFence()
+	{
+		CmdBuffer = nullptr;
+		FenceSignaledCounter = UINT64_MAX;
+	}
+
 	FCmdBufferFence(FCmdBuffer* InCmdBuffer)
 	{
 		CmdBuffer = InCmdBuffer;
@@ -620,6 +628,123 @@ struct FCmdBufferMgr
 
 	std::list<FPrimaryCmdBuffer*> CmdBuffers;
 	std::list<FSecondaryCmdBuffer*> SecondaryCmdBuffers;
+};
+
+struct FQueryMgr
+{
+	struct FTimestampQuery
+	{
+		FCmdBufferFence CmdBufferFence;
+		uint32 QueryIndex = UINT32_MAX;
+	};
+
+	VkQueryPool Pool = VK_NULL_HANDLE;
+	VkDevice Device = VK_NULL_HANDLE;
+	float Period = 0.0f;
+	FTimestampQuery* CurrentQuery = nullptr;
+	enum
+	{
+		NumQueries = 32,
+	};
+	std::vector<FTimestampQuery> Queries;
+
+	std::vector<FTimestampQuery*> PendingQueries;
+	std::vector<FTimestampQuery*> FreeQueries;
+
+	void Create(FDevice* InDevice)
+	{
+		Device = InDevice->Device;
+		Period = InDevice->DeviceProperties.limits.timestampComputeAndGraphics == 0 ? 0.0f : InDevice->DeviceProperties.limits.timestampPeriod;
+
+		VkQueryPoolCreateInfo Info;
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+		Info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+		Info.queryCount = NumQueries;
+		checkVk(vkCreateQueryPool(Device, &Info, nullptr, &Pool));
+		Queries.resize(NumQueries / 2);
+		for (int32 Index = 0; Index < NumQueries / 2; ++Index)
+		{
+			Queries[Index].QueryIndex = Index * 2;
+			FreeQueries.push_back(&Queries[Index]);
+		}
+	}
+
+	void Destroy()
+	{
+		vkDestroyQueryPool(Device, Pool, nullptr);
+	}
+
+	void BeginTime(FCmdBuffer* CmdBuffer)
+	{
+		check(!CurrentQuery);
+
+		check(!FreeQueries.empty());
+		CurrentQuery = FreeQueries.back();
+		FreeQueries.pop_back();
+
+		vkCmdWriteTimestamp(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, Pool, CurrentQuery->QueryIndex);
+	}	
+
+	void EndTime(FCmdBuffer* CmdBuffer)
+	{
+		check(CurrentQuery);
+		vkCmdWriteTimestamp(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, Pool, CurrentQuery->QueryIndex + 1);
+		PendingQueries.push_back(CurrentQuery);
+		CurrentQuery = nullptr;
+	}
+
+	float ReadLastMSResult()
+	{
+		float Found = 0.0f;
+		check(!CurrentQuery);
+		for (int32 Index = (int32)PendingQueries.size() - 1; Index >= 0; --Index)
+		{
+			FTimestampQuery* Query = PendingQueries[Index];
+			if (Query->CmdBufferFence.HasFencePassed())
+			{
+				uint64_t Data[2];
+				VkResult Result = vkGetQueryPoolResults(Device, Pool, Query->QueryIndex, 2, sizeof(Data), &Data, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+				switch (Result)
+				{
+				case VK_SUCCESS:
+					PendingQueries.pop_back();
+					FreeQueries.push_back(Query);
+					if (Found == 0.0f)
+					{
+						uint64 Delta = Data[1] - Data[0];
+						Found = (float)((double)Delta / (double)Period / 1000.0 / 1000.0);
+					}
+					break;
+				case VK_NOT_READY:
+					break;
+				default:
+					check(0);
+					break;
+				}
+			}
+		}
+/*
+		if ((LastQuery & 1) == 0)
+		{
+			uint64_t Data[2];
+			VkResult Result = vkGetQueryPoolResults(Device, Pool, LastQuery, 2, sizeof(Data), &Data, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+			switch (Result)
+			{
+			case VK_SUCCESS:
+				check(0);
+				break;
+			case VK_NOT_READY:
+				return;
+			default:
+				check(0);
+				break;
+			}
+		}
+*/
+
+		return Found;
+	}
 };
 
 static inline uint32 GetFormatBitsPerPixel(VkFormat Format)

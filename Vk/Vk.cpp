@@ -71,6 +71,7 @@ static FCmdBufferMgr GCmdBufferMgr;
 static FSwapchain GSwapchain;
 static FDescriptorPool GDescriptorPool;
 static FStagingManager GStagingManager;
+static FQueryMgr GQueryMgr;
 
 static FMesh GCube;
 static FMesh GSponza;
@@ -785,6 +786,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
+	GQueryMgr.Create(&GDevice);
+
 	GDescriptorPool.Create(GDevice.Device);
 	GStagingManager.Create(GDevice.Device, &GMemMgr);
 
@@ -1050,6 +1053,13 @@ void DoRender()
 
 	auto* CmdBuffer = GCmdBufferMgr.GetActivePrimaryCmdBuffer();
 	CmdBuffer->Begin();
+	float TimeInMS = GQueryMgr.ReadLastMSResult();
+	{
+		//char Text[256];
+		//sprintf_s(Text, "%.3f ms", TimeInMS);
+		//::SetWindowTextA(GInstance.Window, Text);
+	}
+	GQueryMgr.BeginTime(CmdBuffer);
 
 	auto* SceneColor = GRenderTargetPool.Acquire(GControl.DoMSAA ? "SceneColorMSAA" : "SceneColor", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, GControl.DoMSAA ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
 
@@ -1134,6 +1144,8 @@ void DoRender()
 	}
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
+	GQueryMgr.EndTime(CmdBuffer);
+
 	CmdBuffer->End();
 
 	// First submit needs to wait for present semaphore
@@ -1191,6 +1203,8 @@ void DoDeinit()
 	GCheckerboardTexture.Destroy();
 	GHeightMap.Destroy();
 	GCubeTest.Destroy();
+
+	GQueryMgr.Destroy();
 
 	GDescriptorPool.Destroy();
 

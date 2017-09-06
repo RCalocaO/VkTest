@@ -116,25 +116,25 @@ inline void CmdBind(FCmdBuffer* CmdBuffer, FVertexBuffer* VB)
 template <typename TStruct>
 struct FUniformBuffer
 {
-	void Create(VkDevice InDevice, FMemManager* MemMgr,
-		VkBufferUsageFlags InUsageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+	void Create(VkDevice InDevice, FMemManager* MemMgr)
 	{
-		VkBufferUsageFlags UsageFlags = InUsageFlags | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		Buffer.Create(InDevice, sizeof(TStruct), UsageFlags, MemPropertyFlags, MemMgr);
+		UploadBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, MemMgr);
+		//GPUBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr);
 	}
 
 	TStruct* GetMappedData()
 	{
-		return (TStruct*)Buffer.GetMappedData();
+		return (TStruct*)UploadBuffer.GetMappedData();
 	}
 
 	void Destroy()
 	{
-		Buffer.Destroy();
+		//GPUBuffer.Destroy();
+		UploadBuffer.Destroy();
 	}
 
-	FBuffer Buffer;
+	FBuffer UploadBuffer;
+	//FBuffer GPUBuffer;
 };
 
 struct FImage
@@ -1087,7 +1087,7 @@ public:
 	template< typename TStruct>
 	inline void AddUniformBuffer(FDescriptorSet* DescSet, uint32 Binding, const FUniformBuffer<TStruct>& Buffer)
 	{
-		AddUniformBuffer(DescSet, Binding, Buffer.Buffer);
+		AddUniformBuffer(DescSet, Binding, Buffer.UploadBuffer);
 	}
 
 	inline void AddStorageBuffer(FDescriptorSet* DescSet, uint32 Binding, const FBuffer& Buffer)
