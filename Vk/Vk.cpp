@@ -1054,10 +1054,11 @@ void DoRender()
 	auto* CmdBuffer = GCmdBufferMgr.GetActivePrimaryCmdBuffer();
 	CmdBuffer->Begin();
 	float TimeInMS = GQueryMgr.ReadLastMSResult();
+	if (TimeInMS != 0.0f)
 	{
-		//char Text[256];
-		//sprintf_s(Text, "%.3f ms", TimeInMS);
-		//::SetWindowTextA(GInstance.Window, Text);
+		char Text[256];
+		sprintf_s(Text, "%.3f ms (%f FPS)", TimeInMS, (float)(1000.0f / TimeInMS));
+		::SetWindowTextA(GInstance.Window, Text);
 	}
 	GQueryMgr.BeginTime(CmdBuffer);
 

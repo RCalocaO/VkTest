@@ -683,6 +683,8 @@ struct FQueryMgr
 		CurrentQuery = FreeQueries.back();
 		FreeQueries.pop_back();
 
+		CurrentQuery->CmdBufferFence = FCmdBufferFence(CmdBuffer);
+
 		vkCmdWriteTimestamp(CmdBuffer->CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, Pool, CurrentQuery->QueryIndex);
 	}	
 
