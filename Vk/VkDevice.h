@@ -754,6 +754,7 @@ static inline uint32 GetFormatBitsPerPixel(VkFormat Format)
 	switch (Format)
 	{
 	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R8G8B8A8_UNORM:
 		return 32;
 
 	default:

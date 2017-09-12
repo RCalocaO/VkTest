@@ -270,7 +270,7 @@ void FSwapchain::Create(VkSurfaceKHR SurfaceKHR, VkPhysicalDevice PhysicalDevice
 
 	for (uint32 Index = 0; Index < NumImages; ++Index)
 	{
-		ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, Format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+		ImageViews[Index].Create(Device, Images[Index], VK_IMAGE_VIEW_TYPE_2D, Format, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
 		PresentCompleteSemaphores[Index].Create(Device);
 		RenderingSemaphores[Index].Create(Device);
 	}

@@ -209,7 +209,7 @@ struct FImageView
 	VkDevice Device = VK_NULL_HANDLE;
 	VkFormat Format = VK_FORMAT_UNDEFINED;
 
-	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect, uint32 LayerCount)
+	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect, uint32 NumMips, uint32 LayerCount)
 	{
 		Device = InDevice;
 		Format = InFormat;
@@ -225,7 +225,7 @@ struct FImageView
 		Info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		Info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		Info.subresourceRange.aspectMask = ImageAspect;
-		Info.subresourceRange.levelCount = 1;
+		Info.subresourceRange.levelCount = NumMips;
 		Info.subresourceRange.layerCount = LayerCount;
 		checkVk(vkCreateImageView(Device, &Info, nullptr, &ImageView));
 	}
@@ -399,7 +399,7 @@ struct FImage2DWithView : public FBaseImageWithView
 	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
 	{
 		Image.Create2D(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, false, 1);
-		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format), 1);
+		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format), InNumMips, 1);
 	}
 
 	inline uint32 GetWidth() const
@@ -418,7 +418,7 @@ struct FImageCubeWithView : public FBaseImageWithView
 	void Create(VkDevice InDevice, uint32 InSize, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
 	{
 		Image.Create2D(InDevice, InSize, InSize, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, true, 6);
-		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_CUBE, Format, GetImageAspectFlags(Format), 6);
+		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_CUBE, Format, GetImageAspectFlags(Format), InNumMips, 6);
 	}
 
 	inline uint32 GetWidth() const

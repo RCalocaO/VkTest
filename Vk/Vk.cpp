@@ -103,6 +103,7 @@ static FUniformBuffer<FObjUB> GIdentityUB;
 
 static FImage2DWithView GCheckerboardTexture;
 static FImage2DWithView GHeightMap;
+static FImage2DWithView GGradient;
 static FSampler GSampler;
 static FImageCubeWithView GCubeTest;
 
@@ -629,6 +630,7 @@ void CreateAndFillTexture()
 	srand(0);
 	GCheckerboardTexture.Create(GDevice.Device, 64, 64, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
 	GHeightMap.Create(GDevice.Device, 64, 64, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
+	GGradient.Create(GDevice.Device, 256, 256, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 8);
 
 	GCubeTest.Create(GDevice.Device, 64, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
 
@@ -676,6 +678,57 @@ void CreateAndFillTexture()
 		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GHeightMap.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
 
+	{
+		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GGradient.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+		auto FillGradient = [](void* Data, uint32 Width, uint32 Height)
+		{
+			uint32* Out = (uint32*)Data;
+			uint32 OriginalHeight = Height;
+			while (Height--)
+			{
+				uint32 InnerWidth = Width;
+				while (InnerWidth--)
+				{
+					// From https://www.shadertoy.com/view/ls2Bz1
+					//if (x < 0.25)
+					//	c = vec3(0.0, 4.0 * x, 1.0);
+					//else if (x < 0.5)
+					//	c = vec3(0.0, 1.0, 1.0 + 4.0 * (0.25 - x));
+					//else if (x < 0.75)
+					//	c = vec3(4.0 * (x - 0.5), 1.0, 0.0);
+					//else
+					//	c = vec3(1.0, 1.0 + 4.0 * (0.75 - x), 0.0);
+
+					float t = 1.0f - ((float)InnerWidth / (float)Width) * ((float)Height / (float)OriginalHeight);
+
+					FVector3 R;
+					if (t < 0.25)
+					{
+						R = FVector3(0.0f, 4.0f * t, 1.0f);
+					}
+					else if (t < 0.5)
+					{
+						R = FVector3(0.0f, 1.0f, 1.0f + 4.0f * (0.25f - t));
+					}
+					else if (t < 0.75)
+					{
+						R = FVector3(4.0f * (t - 0.5f), 1.0f, 0.0f);
+					}
+					else
+					{
+						R = FVector3(1.0f, 1.0f + 4.0f * (0.75f - t), 0.0f);
+					}
+
+					*Out++ = ToRGB8Color(R, 255);
+				}
+			}
+		};
+		auto* StagingBuffer = GStagingManager.RequestUploadBufferForImage(&GGradient.Image);
+		MapAndFillImageSync(StagingBuffer, CmdBuffer, &GGradient.Image, FillGradient);
+		FlushMappedBuffer(GDevice.Device, StagingBuffer);
+
+		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, GGradient.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	}
 	CmdBuffer->End();
 	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
 	CmdBuffer->WaitForFence();
@@ -851,7 +904,7 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
+	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GGradient.ImageView);
 	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
@@ -1203,6 +1256,7 @@ void DoDeinit()
 
 	GCheckerboardTexture.Destroy();
 	GHeightMap.Destroy();
+	GGradient.Destroy();
 	GCubeTest.Destroy();
 
 	GQueryMgr.Destroy();

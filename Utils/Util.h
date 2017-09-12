@@ -132,6 +132,28 @@ struct FVector3
 		O.z = z + V.z;
 		return O;
 	}
+
+	FVector3() = default;
+
+	FVector3(float f)
+	{
+		Set(f, f, f);
+	}
+
+	FVector3(float InX, float InY, float InZ)
+	{
+		Set(InX, InY, InZ);
+	}
+
+	friend FVector3 operator- (const FVector3& A, const FVector3& B)
+	{
+		return FVector3(A.x - B.x, A.y - B.y, A.z - B.z);
+	}
+
+	friend FVector3 operator* (const FVector3& A, const FVector3& B)
+	{
+		return FVector3(A.x * B.x, A.y * B.y, A.z * B.z);
+	}
 };
 
 inline FVector3 Cross(const FVector3& A, const FVector3& B)
@@ -403,4 +425,33 @@ inline FMatrix4x4 CalculateProjectionMatrix(float FOVRadians, float Aspect, floa
 	New.Set(2, 2, FarZ / (NearZ - FarZ));
 	New.Set(3, 2, -(FarZ * NearZ) / (FarZ - NearZ));
 	return New;
+}
+
+inline uint8 To8BitClamped(float f)
+{
+	f = f > 1.0f ? 1.0f : f;
+	f = f < 0.0f ? 0.0f : f;
+	return (uint8)(f * 255.0f);
+}
+
+struct FColor
+{
+	union
+	{
+		struct
+		{
+			uint8 R, G, B, A;
+		};
+		uint32 Raw;
+	};
+};
+
+inline uint32 ToRGB8Color(FVector3 V, uint8 Alpha)
+{
+	FColor Color;
+	Color.R = To8BitClamped(V.x);
+	Color.G = To8BitClamped(V.y);
+	Color.B = To8BitClamped(V.z);
+	Color.A = Alpha;
+	return Color.Raw;
 }
