@@ -1076,6 +1076,14 @@ void DoRender()
 
 	GControl = GRequestControl;
 
+	if (GControl.DoRecompileShaders)
+	{
+		GRequestControl.DoRecompileShaders = false;
+		vkDeviceWaitIdle(GDevice.Device);
+		GCmdBufferMgr.Update();
+		GShaderCollection.ReloadShaders();
+	}
+
 	auto* CmdBuffer = GCmdBufferMgr.GetActivePrimaryCmdBuffer();
 	CmdBuffer->Begin();
 	float TimeInMS = GQueryMgr.ReadLastMSResult();

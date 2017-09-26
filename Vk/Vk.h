@@ -19,6 +19,7 @@ struct FControl
 	int32 MouseMoveY = 0;
 	bool DoPost;
 	bool DoMSAA;
+	bool DoRecompileShaders = false;
 
 	FControl();
 };

@@ -4,6 +4,7 @@
 #include "VkDevice.h"
 #include "VkMem.h"
 #include "../Utils/Shaders.h"
+#include <direct.h>
 
 class FWriteDescriptors;
 struct FVulkanShaderCollection;
@@ -1489,32 +1490,44 @@ struct FVulkanShaderCollection : FShaderCollection
 		check(0);
 	}
 
-	virtual bool DoCompile(FShaderInfo& Info) override
+	virtual bool DoCompileFromSource(FShaderInfo& Info) override
 	{
 		static const std::string GlslangProlog = GetGlslangCommandLine();
 
-		std::string SPVFile = Info.Filename + ".spv";
-		std::string OutputFile = Info.Filename + ".spvasm";
-
 		std::string Compile = GlslangProlog;
 		Compile += " -e " + Info.Entry;
-		Compile += " -o " + SPVFile;
+		Compile += " -o " + Info.BinaryFile;
 		Compile += " -S " + GetStageName(Info.Stage);
-		Compile += " " + Info.Filename;
-		Compile += " > " + OutputFile;
+		Compile += " " + Info.SourceFile;
+		Compile += " > " + Info.AsmFile;
 		if (system(Compile.c_str()))
 		{
-			std::vector<char> File = LoadFile(OutputFile.c_str());
-			std::string FileString = &File[0];
-			FileString.resize(File.size());
-			std::string Error = "Compile error:\n";
-			Error += FileString;
-			Error += "\n";
-			::OutputDebugStringA(Error.c_str());
+			std::vector<char> File = LoadFile(Info.AsmFile.c_str());
+			if (File.empty())
+			{
+				std::string Error = "Compile error: No output for file ";
+				Error += Info.SourceFile;
+				::OutputDebugStringA(Error.c_str());
+			}
+			else
+			{
+				std::string FileString = &File[0];
+				FileString.resize(File.size());
+				std::string Error = "Compile error:\n";
+				Error += FileString;
+				Error += "\n";
+				::OutputDebugStringA(Error.c_str());
+			}
+
 			return false;
 		}
 
-		std::vector<char> File = LoadFile(SPVFile.c_str());
+		return DoCompileFromBinary(Info);
+	}
+
+	virtual bool DoCompileFromBinary(FShaderInfo& Info) override
+	{
+		std::vector<char> File = LoadFile(Info.BinaryFile.c_str());
 		if (File.empty())
 		{
 			check(0);
@@ -1526,6 +1539,20 @@ struct FVulkanShaderCollection : FShaderCollection
 		Info.Shader = CreateShader(Info, File);
 
 		return Info.Shader != nullptr;
+	}
+
+	virtual void SetupFilenames(const std::string& OriginalFilename, FShaderInfo& Info) override
+	{
+		std::string RootDir;
+		std::string BaseFilename;
+		std::string Extension = FileUtils::SplitPath(OriginalFilename, RootDir, BaseFilename, false);
+
+		std::string OutDir = FileUtils::MakePath(RootDir, "out");
+		_mkdir(OutDir.c_str());
+
+		Info.SourceFile = FileUtils::MakePath(RootDir, BaseFilename + "." + Extension);
+		Info.BinaryFile = FileUtils::MakePath(OutDir, BaseFilename + ".spv");
+		Info.AsmFile = FileUtils::MakePath(OutDir, BaseFilename + ".spvasm");
 	}
 
 	static std::string GetGlslangCommandLine()

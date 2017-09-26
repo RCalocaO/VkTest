@@ -21,18 +21,19 @@ struct FShaderHandle
 struct FShaderInfo
 {
 	FShaderHandle Handle;
-	std::string Filename;
+	std::string SourceFile;
+	std::string BinaryFile;
+	std::string AsmFile;
 	std::string Entry;
 	EShaderStage Stage = EShaderStage::Unknown;
 
 	bool NeedsRecompiling()
 	{
-		if (!Shader)
+		if (FileUtils::IsNewerThan(SourceFile, BinaryFile))
 		{
 			return true;
 		}
 
-		//#todo: Check SPV file, check timestamp
 		return false;
 	}
 
@@ -62,8 +63,12 @@ struct FShaderCollection
 		{
 			if (ShaderInfo.NeedsRecompiling())
 			{
-				//RecompileList[ShaderInfo.ID] = nullptr;
-				DoCompile(ShaderInfo);
+				DoCompileFromSource(ShaderInfo);
+			}
+
+			if (!ShaderInfo.Shader)
+			{
+				DoCompileFromBinary(ShaderInfo);
 			}
 		}
 	}
@@ -86,7 +91,7 @@ struct FShaderCollection
 		//#todo: Mutex
 		FShaderInfo Info;
 		Info.Handle.ID = (int32_t)ShaderInfos.size();
-		Info.Filename = HlslFilename;
+		SetupFilenames(HlslFilename, Info);
 		Info.Entry = EntryPoint;
 		Info.Stage = InStage;
 
@@ -96,7 +101,10 @@ struct FShaderCollection
 
 	virtual IShader* CreateShader(FShaderInfo& Info, std::vector<char>& Data) = 0;
 
-	virtual bool DoCompile(FShaderInfo& Info) = 0;
+	virtual void SetupFilenames(const std::string& OriginalFilename, FShaderInfo& Info) = 0;
+
+	virtual bool DoCompileFromBinary(FShaderInfo& Info) = 0;
+	virtual bool DoCompileFromSource(FShaderInfo& Info) = 0;
 
 	void Destroy(FShaderHandle& Handle)
 	{

@@ -1,8 +1,5 @@
 
 
-//layout (local_size_x = 1, local_size_y = 1) in;
-
-//layout (binding = 0, r32f) uniform writeonly image1D RWImage;
 RWBuffer<int> OutIndices;
 
 struct FPosColorUVVertex

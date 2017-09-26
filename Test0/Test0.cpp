@@ -203,6 +203,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			case 'm':
 				GRequestControl.DoMSAA = !GRequestControl.DoMSAA;
 				break;
+			case '.':
+				GRequestControl.DoRecompileShaders = true;
+				break;
 			default:
 				break;
 			}

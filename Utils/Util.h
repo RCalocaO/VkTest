@@ -456,3 +456,118 @@ inline uint32 ToRGB8Color(FVector3 V, uint8 Alpha)
 	Color.A = Alpha;
 	return Color.Raw;
 }
+
+
+namespace FileUtils
+{
+	// Returns Extension
+	inline std::string SplitPath(const std::string& FullPathToFilename, std::string& OutPath, std::string& OutFilename, bool bIncludeExtension)
+	{
+		char Buffer[1024];
+		char* PtrFilename = nullptr;
+		::GetFullPathNameA(FullPathToFilename.c_str(), sizeof(Buffer), Buffer, &PtrFilename);
+		OutPath = Buffer;
+		if (PtrFilename)
+		{
+			OutPath.resize(PtrFilename - Buffer);
+			OutFilename = PtrFilename;
+		}
+
+		std::string Extension;
+
+		auto ExtensionFound = OutFilename.rfind('.');
+		if (ExtensionFound != std::string::npos)
+		{
+			Extension = OutFilename.substr(ExtensionFound + 1);
+			if (!bIncludeExtension)
+			{
+				OutFilename.resize(ExtensionFound);
+			}
+		}
+
+		return Extension;
+	}
+
+	inline std::string GetBaseName(const std::string& FullPathToFilename, bool bExtension)
+	{
+		std::string Path;
+		std::string Filename;
+		SplitPath(FullPathToFilename, Path, Filename, bExtension);
+		return Filename;
+	}
+
+	inline std::string GetPath(const std::string& FullPathToFilename, bool bExtension)
+	{
+		std::string Path;
+		std::string Filename;
+		SplitPath(FullPathToFilename, Path, Filename, bExtension);
+		return Path;
+	}
+
+	inline std::string MakePath(const std::string& Root, const std::string& DirOrFile)
+	{
+		std::string Out;
+		if (!Root.empty())
+		{
+			Out = Root;
+			if (Root.back() != '\\')
+			{
+				Out += '\\';
+			}
+		}
+
+		Out += DirOrFile;
+
+		return Out;
+	}
+
+	// Returns true is Src is newer than Dst or if Dst doesn't exist
+	inline bool IsNewerThan(const std::string& Src, const std::string& Dst)
+	{
+		HANDLE SrcHandle = ::CreateFileA(Src.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+		if (SrcHandle == INVALID_HANDLE_VALUE)
+		{
+			return false;
+		}
+
+		HANDLE DstHandle = ::CreateFileA(Dst.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+		if (DstHandle == INVALID_HANDLE_VALUE)
+		{
+			::CloseHandle(SrcHandle);
+			return true;
+		}
+
+		FILETIME SrcTime, DstTime;
+		if (!::GetFileTime(SrcHandle, nullptr, nullptr, &SrcTime))
+		{
+			auto Error = ::GetLastError();
+			check(0);
+			return false;
+		}
+		
+		if (!::GetFileTime(DstHandle, nullptr, nullptr, &DstTime))
+		{
+			auto Error = ::GetLastError();
+			check(0);
+			return false;
+		}
+
+		bool bResult = false;
+		if (SrcTime.dwHighDateTime < DstTime.dwHighDateTime)
+		{
+			bResult = false;
+		}
+		else if (SrcTime.dwHighDateTime == DstTime.dwHighDateTime)
+		{
+			bResult = SrcTime.dwLowDateTime > DstTime.dwLowDateTime;
+		}
+		else
+		{
+			bResult = true;
+		}
+
+		::CloseHandle(DstHandle);
+		::CloseHandle(SrcHandle);
+		return bResult;
+	}
+}
