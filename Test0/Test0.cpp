@@ -160,9 +160,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_PAINT:
 		{
-			if (!bDestroyed)
+			static bool bInsidePaint = false;
+			if (!bDestroyed && !bInsidePaint && hWnd == GMainWindow)
 			{
+				bInsidePaint = true;
 				DoRender();
+				bInsidePaint = false;
 			}
 			//PAINTSTRUCT ps;
 			//HDC hdc = BeginPaint(hWnd, &ps);

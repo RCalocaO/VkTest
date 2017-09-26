@@ -148,6 +148,7 @@
   <ItemGroup>
     <ClInclude Include="..\Meshes\ObjLoader.h" />
     <ClInclude Include="..\Meshes\tiny_obj_loader.h" />
+    <ClInclude Include="..\Utils\Shaders.h" />
     <ClInclude Include="..\Utils\Util.h" />
     <ClInclude Include="..\Vk\Vk.h" />
     <ClInclude Include="..\Vk\VkDevice.h" />

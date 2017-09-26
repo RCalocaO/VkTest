@@ -3,8 +3,10 @@
 
 #include "VkDevice.h"
 #include "VkMem.h"
+#include "../Utils/Shaders.h"
 
 class FWriteDescriptors;
+struct FVulkanShaderCollection;
 
 struct FBuffer
 {
@@ -491,20 +493,29 @@ struct FDescriptorSetInfo
 };
 
 
-struct FShader
+struct FShader : public IShader
 {
-	bool Create(const char* Filename, VkDevice Device)
+	VkDevice Device = VK_NULL_HANDLE;
+
+	FShader(const FShaderInfo& InInfo)
+		: IShader(InInfo)
 	{
-		SpirV = LoadFile(Filename);
+	}
+
+	bool Create(VkDevice InDevice)
+	{
+		Device = InDevice;
+
 		if (SpirV.empty())
 		{
 			return false;
 		}
 
+		check(SpirV.size() % 4 == 0);
+
 		VkShaderModuleCreateInfo CreateInfo;
 		MemZero(CreateInfo);
 		CreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		check(SpirV.size() % 4 == 0);
 		CreateInfo.codeSize = SpirV.size();
 		CreateInfo.pCode = (uint32*)&SpirV[0];
 
@@ -513,10 +524,25 @@ struct FShader
 		return true;
 	}
 
-	void Destroy(VkDevice Device)
+	bool Create(std::vector<char>& InSpirV, VkDevice Device)
 	{
-		vkDestroyShaderModule(Device, ShaderModule, nullptr);
-		ShaderModule = VK_NULL_HANDLE;
+		SpirV = InSpirV;
+		return Create(Device);
+	}
+
+	bool Create(const char* Filename, VkDevice Device)
+	{
+		SpirV = LoadFile(Filename);
+		return Create(Device);
+	}
+
+	virtual void Destroy() override
+	{
+		if (ShaderModule != VK_NULL_HANDLE)
+		{
+			vkDestroyShaderModule(Device, ShaderModule, nullptr);
+			ShaderModule = VK_NULL_HANDLE;
+		}
 	}
 
 	void GenerateReflection(std::map<uint32, FDescriptorSetInfo>& DescriptorSets);
@@ -527,6 +553,13 @@ struct FShader
 
 struct FPSO
 {
+	FVulkanShaderCollection& Collection;
+
+	FPSO(FVulkanShaderCollection& InCollection)
+		: Collection(InCollection)
+	{
+	}
+
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
 	{
 	}
@@ -566,30 +599,22 @@ struct FPSO
 
 struct FGfxPSO : public FPSO
 {
-	FShader VS;
-	FShader PS;
+	FShaderHandle VS;
+	FShaderHandle PS;
 
-	virtual void Destroy(VkDevice Device) override
+	FGfxPSO(FVulkanShaderCollection& InCollection)
+		: FPSO(InCollection)
 	{
-		FPSO::Destroy(Device);
-		PS.Destroy(Device);
-		VS.Destroy(Device);
 	}
 
-	bool CreateVSPS(VkDevice Device, const char* VSFilename, const char* PSFilename)
+	virtual void Destroy(VkDevice Device) override;
+
+	bool CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS)
 	{
-		if (!VS.Create(VSFilename, Device))
-		{
-			return false;
-		}
-
-		if (!PS.Create(PSFilename, Device))
-		{
-			return false;
-		}
-
-		PS.GenerateReflection(DescriptorSetInfo);
-		VS.GenerateReflection(DescriptorSetInfo);
+		VS = InVS;
+		PS = InPS;
+		//((FShader*)(Collection.GetShader(VS)))->GenerateReflection(DescriptorSetInfo);
+		//((FShader*)(Collection.GetShader(PS)))->GenerateReflection(DescriptorSetInfo);
 		CreateDescriptorSetLayout(Device);
 		return true;
 	}
@@ -605,26 +630,7 @@ struct FGfxPSO : public FPSO
 		OutBindings.push_back(NewBinding);
 	}
 
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const override
-	{
-		VkPipelineShaderStageCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		Info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		Info.module = VS.ShaderModule;
-		Info.pName = "main";
-		OutShaderStages.push_back(Info);
-
-		if (PS.ShaderModule != VK_NULL_HANDLE)
-		{
-			MemZero(Info);
-			Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			Info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-			Info.module = PS.ShaderModule;
-			Info.pName = "main";
-			OutShaderStages.push_back(Info);
-		}
-	}
+	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const override;
 };
 
 struct FVertexFormat
@@ -701,22 +707,19 @@ struct FGfxPSOLayout
 
 struct FComputePSO : public FPSO
 {
-	FShader CS;
-
-	virtual void Destroy(VkDevice Device) override
+	FComputePSO(FVulkanShaderCollection& InCollection)
+		: FPSO(InCollection)
 	{
-		FPSO::Destroy(Device);
-		CS.Destroy(Device);
 	}
 
-	bool Create(VkDevice Device, const char* CSFilename)
-	{
-		if (!CS.Create(CSFilename, Device))
-		{
-			return false;
-		}
+	FShaderHandle CS;
 
-		CS.GenerateReflection(DescriptorSetInfo);
+	virtual void Destroy(VkDevice Device) override;
+
+	bool Create(VkDevice Device, FShaderHandle InCS)
+	{
+		CS = InCS;
+		//CS.GenerateReflection(DescriptorSetInfo);
 		CreateDescriptorSetLayout(Device);
 		return true;
 	}
@@ -732,16 +735,7 @@ struct FComputePSO : public FPSO
 		OutBindings.push_back(NewBinding);
 	}
 
-	virtual void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages)
-	{
-		VkPipelineShaderStageCreateInfo Info;
-		MemZero(Info);
-		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-		Info.module = CS.ShaderModule;
-		Info.pName = "main";
-		OutShaderStages.push_back(Info);
-	}
+	void SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const override;
 };
 
 struct FBasePipeline
@@ -1132,6 +1126,48 @@ public:
 		DSWrites.push_back(DSWrite);
 	}
 
+	inline void AddImage(FDescriptorSet* DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView)
+	{
+		check(!bClosed);
+		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
+		MemZero(*ImageInfo);
+		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo->imageView = ImageView.ImageView;
+		ImageInfo->sampler = Sampler.Sampler;
+		ImageInfos.push_back(ImageInfo);
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescSet->Set;
+		DSWrite.dstBinding = Binding;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		DSWrite.pImageInfo = ImageInfo;
+		DSWrites.push_back(DSWrite);
+	}
+
+	inline void AddSampler(FDescriptorSet* DescSet, uint32 Binding, const FSampler& Sampler)
+	{
+		check(!bClosed);
+		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
+		MemZero(*ImageInfo);
+		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo->imageView = VK_NULL_HANDLE;
+		ImageInfo->sampler = Sampler.Sampler;
+		ImageInfos.push_back(ImageInfo);
+
+		VkWriteDescriptorSet DSWrite;
+		MemZero(DSWrite);
+		DSWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		DSWrite.dstSet = DescSet->Set;
+		DSWrite.dstBinding = Binding;
+		DSWrite.descriptorCount = 1;
+		DSWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+		DSWrite.pImageInfo = ImageInfo;
+		DSWrites.push_back(DSWrite);
+	}
+
 	inline void AddStorageImage(FDescriptorSet* DescSet, uint32 Binding, const FImageView& ImageView)
 	{
 		check(!bClosed);
@@ -1425,4 +1461,121 @@ inline void BlitColorImage(FPrimaryCmdBuffer* CmdBuffer, uint32 Width, uint32 He
 		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, DstImage, DstCurrentLayout, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
 	vkCmdBlitImage(CmdBuffer->CmdBuffer, SrcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, DstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &BlitRegion, VK_FILTER_NEAREST);
+};
+
+
+struct FVulkanShaderCollection : FShaderCollection
+{
+	VkDevice Device = VK_NULL_HANDLE;
+
+	void Create(VkDevice InDevice)
+	{
+		Device = InDevice;
+	}
+
+	void DestroyShader(FShaderHandle Handle)
+	{
+		IShader* Shader = GetShader(Handle);
+		if (Shader)
+		{
+			//#todo Sync GPU
+			Shader->Destroy();
+			delete Shader;
+		}
+	}
+
+	void Destroy()
+	{
+		check(0);
+	}
+
+	virtual bool DoCompile(FShaderInfo& Info) override
+	{
+		static const std::string GlslangProlog = GetGlslangCommandLine();
+
+		std::string SPVFile = Info.Filename + ".spv";
+		std::string OutputFile = Info.Filename + ".spvasm";
+
+		std::string Compile = GlslangProlog;
+		Compile += " -e " + Info.Entry;
+		Compile += " -o " + SPVFile;
+		Compile += " -S " + GetStageName(Info.Stage);
+		Compile += " " + Info.Filename;
+		Compile += " > " + OutputFile;
+		if (system(Compile.c_str()))
+		{
+			std::vector<char> File = LoadFile(OutputFile.c_str());
+			std::string FileString = &File[0];
+			FileString.resize(File.size());
+			std::string Error = "Compile error:\n";
+			Error += FileString;
+			Error += "\n";
+			::OutputDebugStringA(Error.c_str());
+			return false;
+		}
+
+		std::vector<char> File = LoadFile(SPVFile.c_str());
+		if (File.empty())
+		{
+			check(0);
+			return false;
+		}
+
+		//#todo: Destroy old; sync with rendering
+		check(!Info.Shader);
+		Info.Shader = CreateShader(Info, File);
+
+		return Info.Shader != nullptr;
+	}
+
+	static std::string GetGlslangCommandLine()
+	{
+		std::string Out;
+		char Glslang[MAX_PATH];
+		char SDKDir[MAX_PATH];
+		::GetEnvironmentVariableA("VULKAN_SDK", SDKDir, MAX_PATH - 1);
+		sprintf_s(Glslang, "%s\\Bin\\glslangValidator.exe", SDKDir);
+		Out = Glslang;
+		Out += " -V -r -l -H -D --hlsl-iomap --auto-map-bindings";
+		return Out;
+	}
+
+	static std::string GetStageName(EShaderStage Stage)
+	{
+		switch (Stage)
+		{
+		case EShaderStage::Compute: return "comp";
+		case EShaderStage::Vertex:	return "vert";
+		case EShaderStage::Pixel:	return "frag";
+		default:
+			break;
+		}
+
+		return "INVALID";
+	}
+
+	virtual IShader* CreateShader(FShaderInfo& Info, std::vector<char>& Data) override
+	{
+		FShader* Shader = new FShader(Info);
+		Shader->Stage = Info.Stage;
+		if (Shader->Create(Data, Device))
+		{
+			return Shader;
+		}
+
+		delete Shader;
+		return nullptr;
+	}
+
+	VkShaderModule GetShaderModule(FShaderHandle Handle)
+	{
+		IShader* Shader = GetShader(Handle);
+		if (Shader)
+		{
+			return ((FShader*)Shader)->ShaderModule;
+		}
+
+		check(0);
+		return VK_NULL_HANDLE;
+	}
 };

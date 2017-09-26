@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "VkDevice.h"
 #include "VkResources.h"
+#include <vulkan/spirv.h>
 #include <set>
 
 static bool GSkipValidation = false;
@@ -674,10 +675,9 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 	State = EState::InsideRenderPass;
 }
 
-#include <vulkan/spirv.h>
-
 void FShader::GenerateReflection(std::map<uint32, FDescriptorSetInfo>& DescriptorSets)
 {
+	check(!SpirV.empty());
 	uint32* StartWord = (uint32*)&SpirV[0];
 	uint32* Word = StartWord;
 	check(*Word++ == SpvMagicNumber);	// Magic
@@ -1048,4 +1048,50 @@ void FCmdBufferMgr::Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* C
 {
 	Submit(CmdBuffer, Queue, WaitSemaphore, SignaledSemaphore);
 	DescriptorPool.RefreshFences();
+}
+
+void FGfxPSO::Destroy(VkDevice Device)
+{
+	FPSO::Destroy(Device);
+	Collection.DestroyShader(PS);
+	Collection.DestroyShader(VS);
+}
+
+void FComputePSO::Destroy(VkDevice Device)
+{
+	FPSO::Destroy(Device);
+	Collection.DestroyShader(CS);
+}
+
+void FComputePSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const
+{
+	VkPipelineShaderStageCreateInfo Info;
+	MemZero(Info);
+	Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	Info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	Info.module = Collection.GetShaderModule(CS);
+	Info.pName = Collection.GetEntryPoint(CS).c_str();
+	OutShaderStages.push_back(Info);
+}
+
+void FGfxPSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const
+{
+	VkPipelineShaderStageCreateInfo Info;
+	MemZero(Info);
+	Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	Info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	Info.module = Collection.GetShaderModule(VS);
+	Info.pName = Collection.GetEntryPoint(VS).c_str();
+	OutShaderStages.push_back(Info);
+
+	VkShaderModule PixelShaderModule = Collection.GetShaderModule(PS);
+	if (PixelShaderModule != VK_NULL_HANDLE)
+	{
+		MemZero(Info);
+		Info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		Info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		Info.module = PixelShaderModule;
+		Info.pName = Collection.GetEntryPoint(PS).c_str();
+		OutShaderStages.push_back(Info);
+	}
 }

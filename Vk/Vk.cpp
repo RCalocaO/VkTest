@@ -72,6 +72,7 @@ static FSwapchain GSwapchain;
 static FDescriptorPool GDescriptorPool;
 static FStagingManager GStagingManager;
 static FQueryMgr GQueryMgr;
+static FVulkanShaderCollection GShaderCollection;
 
 static FMesh GCube;
 static FMesh GSponza;
@@ -323,6 +324,11 @@ bool GQuitting = false;
 
 struct FTestPSO : public FGfxPSO
 {
+	FTestPSO()
+		: FGfxPSO(GShaderCollection)
+	{
+	}
+
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -334,6 +340,11 @@ FTestPSO GTestPSO;
 
 struct FOneImagePSO : public FComputePSO
 {
+	FOneImagePSO()
+		: FComputePSO(GShaderCollection)
+	{
+	}
+
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
@@ -344,6 +355,11 @@ FOneImagePSO GTestComputePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
+	FTestPostComputePSO()
+		: FComputePSO(GShaderCollection)
+	{
+	}
+
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
@@ -354,12 +370,18 @@ FTestPostComputePSO GTestComputePostPSO;
 
 struct FSetupFloorPSO : public FComputePSO
 {
+	FSetupFloorPSO()
+		: FComputePSO(GShaderCollection)
+	{
+	}
+
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 		AddBinding(OutBindings, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+		AddBinding(OutBindings, 3, VK_DESCRIPTOR_TYPE_SAMPLER);
+		AddBinding(OutBindings, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
 static FSetupFloorPSO GSetupFloorPSO;
@@ -532,74 +554,21 @@ FObjectCache GObjectCache;
 
 static bool LoadShadersAndGeometry()
 {
-	static bool bDoCompile = false;
-	if (bDoCompile)
-	{
-		// Compile the shaders
-		char SDKDir[MAX_PATH];
-		::GetEnvironmentVariableA("VULKAN_SDK", SDKDir, MAX_PATH - 1);
-		char Glslang[MAX_PATH];
-		sprintf_s(Glslang, "%s\\Bin\\glslangValidator.exe", SDKDir);
+	FShaderHandle TestComputeCS = GShaderCollection.Register("../Shaders/TestComputeCS.hlsl", EShaderStage::Compute, "Main");
+	FShaderHandle PassThroughVS = GShaderCollection.Register("../Shaders/PassThroughVS.hlsl", EShaderStage::Vertex, "MainVS");
+	FShaderHandle TestVS = GShaderCollection.Register("../Shaders/Test.hlsl", EShaderStage::Vertex, "MainVS");
+	FShaderHandle TestPS = GShaderCollection.Register("../Shaders/Test.hlsl", EShaderStage::Pixel, "MainPS");
+	FShaderHandle CreateFloorCS = GShaderCollection.Register("../Shaders/CreateFloorCS.hlsl", EShaderStage::Compute, "Main");
+	FShaderHandle TestPostCS = GShaderCollection.Register("../Shaders/TestPostCS.hlsl", EShaderStage::Compute, "Main");
+	FShaderHandle FillTextureCS = GShaderCollection.Register("../Shaders/FillTextureCS.hlsl", EShaderStage::Compute, "Main");
 
-		auto DoCompile = [&](const char* InFile)
-		{
-			std::string Compile = Glslang;
-			Compile += " -V -r -H -l -o ";
-			Compile += InFile;
-			Compile += ".spv ";
-			Compile += InFile;
-			if (system(Compile.c_str()))
-			{
-				return false;
-			}
+	GShaderCollection.ReloadShaders();
 
-			return true;
-		};
-
-		if (!DoCompile(" ../Shaders/Test0.vert"))
-		{
-			return false;
-		}
-
-		if (!DoCompile(" ../Shaders/Test0.frag"))
-		{
-			return false;
-		}
-
-		if (!DoCompile(" ../Shaders/Test0.comp"))
-		{
-			return false;
-		}
-
-		if (!DoCompile(" ../Shaders/TestPost.comp"))
-		{
-			return false;
-		}
-
-		if (!DoCompile(" ../Shaders/FillTexture.comp"))
-		{
-			return false;
-		}
-
-		if (!DoCompile(" ../Shaders/CreateFloor.comp"))
-		{
-			return false;
-		}
-
-		check(GTestPSO.CreateVSPS(GDevice.Device, "vert.spv", "frag.spv"));
-		check(GTestComputePSO.Create(GDevice.Device, "comp.spv"));
-		check(GTestComputePostPSO.Create(GDevice.Device, "TestPost.spv"));
-		check(GFillTexturePSO.Create(GDevice.Device, "FillTexture.spv"));
-		check(GSetupFloorPSO.Create(GDevice.Device, "CreateFloor.spv"));
-	}
-	else
-	{
-		check(GSetupFloorPSO.Create(GDevice.Device, "../Shaders/CreateFloor.comp.spv"));
-		check(GTestComputePostPSO.Create(GDevice.Device, "../Shaders/TestPost.comp.spv"));
-		check(GFillTexturePSO.Create(GDevice.Device, "../Shaders/FillTexture.comp.spv"));
-		check(GTestPSO.CreateVSPS(GDevice.Device, "../Shaders/Test0.vert.spv", "../Shaders/Test0.frag.spv"));
-		check(GTestComputePSO.Create(GDevice.Device, "../Shaders/Test0.comp.spv"));
-	}
+	check(GSetupFloorPSO.Create(GDevice.Device, CreateFloorCS));
+	check(GTestPSO.CreateVSPS(GDevice.Device, TestVS, TestPS));
+	check(GTestComputePostPSO.Create(GDevice.Device, TestPostCS));
+	check(GFillTexturePSO.Create(GDevice.Device, FillTextureCS));
+	check(GTestComputePSO.Create(GDevice.Device, TestComputeCS));
 
 	// Setup Vertex Format
 	GPosColorUVFormat.AddVertexBuffer(0, sizeof(FPosColorUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
@@ -751,7 +720,8 @@ static void FillFloor(FCmdBuffer* CmdBuffer)
 		WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
 		WriteDescriptors.AddStorageBuffer(DescriptorSet, 1, GFloorVB.Buffer);
 		WriteDescriptors.AddUniformBuffer(DescriptorSet, 2, GCreateFloorUB);
-		WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 3, GSampler, GHeightMap.ImageView);
+		WriteDescriptors.AddSampler(DescriptorSet, 3, GSampler);
+		WriteDescriptors.AddImage(DescriptorSet, 4, GSampler, GHeightMap.ImageView);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
@@ -838,6 +808,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
 
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
+
+	GShaderCollection.Create(GDevice.Device);
 
 	GQueryMgr.Create(&GDevice);
 
@@ -1275,6 +1247,7 @@ void DoDeinit()
 	GStagingManager.Destroy();
 	GObjectCache.Destroy();
 	GCmdBufferMgr.Destroy();
+	GShaderCollection.Destroy();
 	GMemMgr.Destroy();
 	GDevice.Destroy();
 	GInstance.Destroy();

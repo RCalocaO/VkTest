@@ -698,8 +698,11 @@ struct FQueryMgr
 
 	float ReadLastMSResult()
 	{
+		if (CurrentQuery)
+		{
+			return 0;
+		}
 		float Found = 0.0f;
-		check(!CurrentQuery);
 		for (int32 Index = (int32)PendingQueries.size() - 1; Index >= 0; --Index)
 		{
 			FTimestampQuery* Query = PendingQueries[Index];

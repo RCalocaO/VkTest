@@ -1,15 +1,9 @@
-#version 450
 
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_ARB_shading_language_420pack : enable
 
-layout (local_size_x = 1, local_size_y = 1) in;
+//layout (local_size_x = 1, local_size_y = 1) in;
 
 //layout (binding = 0, r32f) uniform writeonly image1D RWImage;
-layout (set = 0, binding = 0) buffer IB
-{
-	int OutIndices[];
-};
+RWBuffer<int> OutIndices;
 
 struct FPosColorUVVertex
 {
@@ -18,26 +12,25 @@ struct FPosColorUVVertex
 	float u, v;
 };
 
-layout (set = 0, binding = 1) buffer VB
-{
-	FPosColorUVVertex OutVertices[];
-};
+RWStructuredBuffer<FPosColorUVVertex> OutVertices;
 
-layout (set = 0, binding = 2) uniform UB
+cbuffer UB
 {
 	float Y;
 	float Extent;
 	int NumQuadsX;
 	int NumQuadsZ;
 	float Elevation;
-};
+}
 
-layout(set = 0, binding = 3) uniform sampler2D Heightmap;
+SamplerState SS;
+Texture2D<float4> Heightmap;
 
-void main()
+[numthreads(1, 1, 1)]
+void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 {
-	int QuadIndexX = int(gl_GlobalInvocationID.x);
-	int QuadIndexZ = int(gl_GlobalInvocationID.z);
+	int QuadIndexX = int(GlobalInvocationID.x);
+	int QuadIndexZ = int(GlobalInvocationID.z);
 	int QuadIndex = QuadIndexX + QuadIndexZ * NumQuadsX;
 
 	if (QuadIndexX < NumQuadsX && QuadIndexZ < NumQuadsZ)
@@ -53,7 +46,7 @@ void main()
 		float VWidth = 1.0 / float(NumQuadsZ);
 		float V = VWidth * float(QuadIndexZ);
 
-		float Height = texture(Heightmap, vec2(U, V)).x;
+		float Height = Heightmap.Sample(SS, float2(U, V)).x;
 		float Y = Y + Elevation * Height;
 
 		OutVertices[QuadIndex].x = X;
