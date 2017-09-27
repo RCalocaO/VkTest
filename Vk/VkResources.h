@@ -482,9 +482,10 @@ struct FDescriptorSetInfo
 		enum class EType
 		{
 			Unknown,
+			Sampler,
 			SampledImage,
 			StorageImage,
-			Image,
+			CombinedSamplerImage,
 			UniformBuffer,
 			StorageBuffer,
 		};
@@ -717,13 +718,7 @@ struct FComputePSO : public FPSO
 
 	virtual void Destroy(VkDevice Device) override;
 
-	bool Create(VkDevice Device, FShaderHandle InCS)
-	{
-		CS = InCS;
-		//CS.GenerateReflection(DescriptorSetInfo);
-		CreateDescriptorSetLayout(Device);
-		return true;
-	}
+	bool Create(VkDevice Device, FShaderHandle InCS);
 
 	inline void AddBinding(std::vector<VkDescriptorSetLayoutBinding>& OutBindings, int32 Binding, VkDescriptorType DescType, uint32 NumDescriptors = 1)
 	{
@@ -1604,5 +1599,16 @@ struct FVulkanShaderCollection : FShaderCollection
 
 		check(0);
 		return VK_NULL_HANDLE;
+	}
+
+	FShader* GetVulkanShader(FShaderHandle Handle)
+	{
+		IShader* Shader = GetShader(Handle);
+		if (Shader)
+		{
+			return (FShader*)Shader;
+		}
+
+		return nullptr;
 	}
 };
