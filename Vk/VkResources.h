@@ -611,15 +611,7 @@ struct FGfxPSO : public FPSO
 
 	virtual void Destroy(VkDevice Device) override;
 
-	bool CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS)
-	{
-		VS = InVS;
-		PS = InPS;
-		//((FShader*)(Collection.GetShader(VS)))->GenerateReflection(DescriptorSetInfo);
-		//((FShader*)(Collection.GetShader(PS)))->GenerateReflection(DescriptorSetInfo);
-		CreateDescriptorSetLayout(Device);
-		return true;
-	}
+	bool CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS);
 
 	inline void AddBinding(std::vector<VkDescriptorSetLayoutBinding>& OutBindings, VkShaderStageFlags Stage, int32 Binding, VkDescriptorType DescType, uint32 NumDescriptors = 1)
 	{
@@ -1491,11 +1483,12 @@ struct FVulkanShaderCollection : FShaderCollection
 
 		std::string Compile = GlslangProlog;
 		Compile += " -e " + Info.Entry;
-		Compile += " -o " + Info.BinaryFile;
+		Compile += " -o " + FileUtils::AddQuotes(Info.BinaryFile);
 		Compile += " -S " + GetStageName(Info.Stage);
-		Compile += " " + Info.SourceFile;
-		Compile += " > " + Info.AsmFile;
-		if (system(Compile.c_str()))
+		Compile += " " + FileUtils::AddQuotes(Info.SourceFile);
+		Compile += " > " + FileUtils::AddQuotes(Info.AsmFile);
+		int ReturnCode = system(Compile.c_str());
+		if (ReturnCode)
 		{
 			std::vector<char> File = LoadFile(Info.AsmFile.c_str());
 			if (File.empty())
@@ -1546,8 +1539,8 @@ struct FVulkanShaderCollection : FShaderCollection
 		_mkdir(OutDir.c_str());
 
 		Info.SourceFile = FileUtils::MakePath(RootDir, BaseFilename + "." + Extension);
-		Info.BinaryFile = FileUtils::MakePath(OutDir, BaseFilename + ".spv");
-		Info.AsmFile = FileUtils::MakePath(OutDir, BaseFilename + ".spvasm");
+		Info.BinaryFile = FileUtils::MakePath(OutDir, BaseFilename + "." + Info.Entry + ".spv");
+		Info.AsmFile = FileUtils::MakePath(OutDir, BaseFilename + "." + Info.Entry + ".spvasm");
 	}
 
 	static std::string GetGlslangCommandLine()

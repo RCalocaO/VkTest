@@ -680,11 +680,26 @@ void FShader::GenerateReflection(std::map<uint32, FDescriptorSetInfo>& Descripto
 {
 	spirv_cross::Compiler Compiler((uint32*)&SpirV[0], SpirV.size() / 4);
 	spirv_cross::ShaderResources Resources = Compiler.get_shader_resources();
-	for (const spirv_cross::Resource& Resource : Resources.uniform_buffers)
+
+	auto ParseResources = [&](std::vector<spirv_cross::Resource>& Resources, FDescriptorSetInfo::FBindingInfo::EType Type)
 	{
-		Resource.name;
-		uint32 Binding = Compiler.get_decoration(Resource.id, spv::DecorationBinding);
-	}
+		for (const spirv_cross::Resource& Resource : Resources)
+		{
+			uint32 Binding = Compiler.get_decoration(Resource.id, spv::DecorationBinding);
+			uint32 Set = Compiler.get_decoration(Resource.id, spv::DecorationDescriptorSet);
+			DescriptorSets[Set].DescriptorSetIndex = Set;
+			DescriptorSets[Set].Bindings[Binding].BindingIndex = Binding;
+			DescriptorSets[Set].Bindings[Binding].Name = Resource.name;
+			DescriptorSets[Set].Bindings[Binding].Type = Type;
+		}
+	};
+
+	ParseResources(Resources.uniform_buffers, FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer);
+	ParseResources(Resources.storage_buffers, FDescriptorSetInfo::FBindingInfo::EType::StorageBuffer);
+	ParseResources(Resources.storage_images, FDescriptorSetInfo::FBindingInfo::EType::StorageImage);
+	ParseResources(Resources.sampled_images, FDescriptorSetInfo::FBindingInfo::EType::CombinedSamplerImage);
+	ParseResources(Resources.separate_images, FDescriptorSetInfo::FBindingInfo::EType::SampledImage);
+	ParseResources(Resources.separate_samplers, FDescriptorSetInfo::FBindingInfo::EType::Sampler);
 }
 
 
@@ -825,6 +840,16 @@ void FComputePSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>
 	Info.module = Collection.GetShaderModule(CS);
 	Info.pName = Collection.GetEntryPoint(CS).c_str();
 	OutShaderStages.push_back(Info);
+}
+
+bool FGfxPSO::CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS)
+{
+	VS = InVS;
+	PS = InPS;
+	((FShader*)(Collection.GetShader(VS)))->GenerateReflection(DescriptorSetInfo);
+	((FShader*)(Collection.GetShader(PS)))->GenerateReflection(DescriptorSetInfo);
+	CreateDescriptorSetLayout(Device);
+	return true;
 }
 
 void FGfxPSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& OutShaderStages) const

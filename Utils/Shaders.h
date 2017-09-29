@@ -65,8 +65,7 @@ struct FShaderCollection
 			{
 				DoCompileFromSource(ShaderInfo);
 			}
-
-			if (!ShaderInfo.Shader)
+			else if (!ShaderInfo.Shader)
 			{
 				DoCompileFromBinary(ShaderInfo);
 			}
@@ -91,9 +90,9 @@ struct FShaderCollection
 		//#todo: Mutex
 		FShaderInfo Info;
 		Info.Handle.ID = (int32_t)ShaderInfos.size();
-		SetupFilenames(HlslFilename, Info);
 		Info.Entry = EntryPoint;
 		Info.Stage = InStage;
+		SetupFilenames(HlslFilename, Info);
 
 		ShaderInfos.push_back(Info);
 		return Info.Handle;

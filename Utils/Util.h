@@ -504,12 +504,23 @@ namespace FileUtils
 		return Path;
 	}
 
+	inline void RemoveQuotes(std::string& Path)
+	{
+		if (Path.size() > 2 && Path.front() == '"')
+		{
+			check(Path.back() == '"');
+			Path.pop_back();
+			Path = Path.substr(1);
+		}
+	}
+
 	inline std::string MakePath(const std::string& Root, const std::string& DirOrFile)
 	{
 		std::string Out;
 		if (!Root.empty())
 		{
 			Out = Root;
+			RemoveQuotes(Out);
 			if (Root.back() != '\\')
 			{
 				Out += '\\';
@@ -517,8 +528,23 @@ namespace FileUtils
 		}
 
 		Out += DirOrFile;
-
 		return Out;
+	}
+
+	inline std::string AddQuotes(const std::string& InPath)
+	{
+		std::string Path = InPath;
+		if (Path.size() > 2 && Path.front() == '"')
+		{
+			check(Path.back() == '"');
+		}
+		else
+		{
+			Path = "\"" + Path;
+			Path +="\"";
+		}
+
+		return Path;
 	}
 
 	// Returns true is Src is newer than Dst or if Dst doesn't exist

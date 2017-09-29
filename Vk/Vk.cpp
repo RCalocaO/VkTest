@@ -351,7 +351,6 @@ struct FOneImagePSO : public FComputePSO
 	}
 };
 FOneImagePSO GFillTexturePSO;
-FOneImagePSO GTestComputePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
@@ -366,6 +365,7 @@ struct FTestPostComputePSO : public FComputePSO
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 };
+FTestPostComputePSO GTestComputePSO;
 FTestPostComputePSO GTestComputePostPSO;
 
 struct FSetupFloorPSO : public FComputePSO

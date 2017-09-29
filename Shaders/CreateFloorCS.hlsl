@@ -1,6 +1,5 @@
 
-
-RWBuffer<int> OutIndices;
+RWStructuredBuffer<int> OutIndices;
 
 struct FPosColorUVVertex
 {
