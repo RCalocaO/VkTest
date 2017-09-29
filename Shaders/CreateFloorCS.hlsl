@@ -1,5 +1,5 @@
 
-RWStructuredBuffer<int> OutIndices;
+RWStructuredBuffer<int> OutIndices : register(b0);
 
 struct FPosColorUVVertex
 {
@@ -8,9 +8,9 @@ struct FPosColorUVVertex
 	float u, v;
 };
 
-RWStructuredBuffer<FPosColorUVVertex> OutVertices;
+RWStructuredBuffer<FPosColorUVVertex> OutVertices : register(b1);
 
-cbuffer UB
+cbuffer UB : register(b2)
 {
 	float Y;
 	float Extent;
@@ -19,8 +19,8 @@ cbuffer UB
 	float Elevation;
 }
 
-SamplerState SS;
-Texture2D<float4> Heightmap;
+SamplerState SS : register(s3);
+Texture2D<float4> Heightmap : register(t4);
 
 [numthreads(1, 1, 1)]
 void Main(int3 GlobalInvocationID : SV_DispatchThreadID)

@@ -333,7 +333,8 @@ struct FTestPSO : public FGfxPSO
 	{
 		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_SAMPLER);
+		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
 FTestPSO GTestPSO;
@@ -876,7 +877,8 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GGradient.ImageView);
+	WriteDescriptors.AddSampler(DescriptorSet, 2, GSampler);
+	WriteDescriptors.AddImage(DescriptorSet, 3, GSampler, GGradient.ImageView);
 	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
@@ -896,7 +898,8 @@ static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* C
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
+	WriteDescriptors.AddSampler(DescriptorSet, 2, GSampler);
+	WriteDescriptors.AddImage(DescriptorSet, 3, GSampler, /*GCheckerboardTexture*/GHeightMap.ImageView);
 	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
@@ -912,7 +915,8 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
-	WriteDescriptors.AddCombinedImageSampler(DescriptorSet, 2, GSampler, GCheckerboardTexture.ImageView);
+	WriteDescriptors.AddSampler(DescriptorSet, 2, GSampler);
+	WriteDescriptors.AddImage(DescriptorSet, 3, GSampler, GCheckerboardTexture.ImageView);
 	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
