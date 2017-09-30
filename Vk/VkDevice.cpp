@@ -7,29 +7,30 @@
 #include <set>
 #include "../../SPIRV-Cross/spirv_cross.hpp"
 
-static bool GSkipValidation = false;
+bool GValidation = false;
+bool GRenderDoc = false;
 
 void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, std::vector<const char*>& OutExtensions)
 {
-	if (!GSkipValidation)
+	uint32 NumLayers;
+	checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, nullptr));
+	if (NumLayers > 0)
 	{
-		uint32 NumLayers;
-		checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, nullptr));
-		if (NumLayers > 0)
+		std::vector<VkLayerProperties> InstanceProperties;
+		InstanceProperties.resize(NumLayers);
+
+		checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
+
+		for (auto& Property : InstanceProperties)
 		{
-			std::vector<VkLayerProperties> InstanceProperties;
-			InstanceProperties.resize(NumLayers);
+			std::string s = "Found Layer: ";
+			s += Property.layerName;
+			s += "\n";
+			::OutputDebugStringA(s.c_str());
+		}
 
-			checkVk(vkEnumerateInstanceLayerProperties(&NumLayers, &InstanceProperties[0]));
-
-			for (auto& Property : InstanceProperties)
-			{
-				std::string s = "Found Layer: ";
-				s += Property.layerName;
-				s += "\n";
-				::OutputDebugStringA(s.c_str());
-			}
-
+		if (GValidation)
+		{
 			const char* UseValidationLayers[] =
 			{
 				//"VK_LAYER_LUNARG_api_dump",
@@ -42,7 +43,6 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 				"VK_LAYER_LUNARG_swapchain",
 				"VK_LAYER_GOOGLE_threading",
 				"VK_LAYER_GOOGLE_unique_objects",
-				//"VK_LAYER_RENDERDOC_Capture",
 			};
 
 			for (auto* DesiredLayer : UseValidationLayers)
@@ -55,6 +55,18 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 						// Should probably remove it from InstanceProperties array...
 						break;
 					}
+				}
+			}
+		}
+
+		if (GRenderDoc)
+		{
+			for (auto& Prop : InstanceProperties)
+			{
+				if (!strcmp(Prop.layerName, "VK_LAYER_RENDERDOC_Capture"))
+				{
+					OutLayers.push_back("VK_LAYER_RENDERDOC_Capture");
+					break;
 				}
 			}
 		}

@@ -212,7 +212,7 @@ struct FImageView
 	VkDevice Device = VK_NULL_HANDLE;
 	VkFormat Format = VK_FORMAT_UNDEFINED;
 
-	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect, uint32 NumMips, uint32 LayerCount)
+	void Create(VkDevice InDevice, VkImage Image, VkImageViewType ViewType, VkFormat InFormat, VkImageAspectFlags ImageAspect, uint32 NumMips, uint32 LayerCount, uint32 StartMip = 0, uint32 StartLayer = 0)
 	{
 		Device = InDevice;
 		Format = InFormat;
@@ -228,7 +228,9 @@ struct FImageView
 		Info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		Info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		Info.subresourceRange.aspectMask = ImageAspect;
+		Info.subresourceRange.baseMipLevel = StartMip;
 		Info.subresourceRange.levelCount = NumMips;
+		Info.subresourceRange.baseArrayLayer = StartLayer;
 		Info.subresourceRange.layerCount = LayerCount;
 		checkVk(vkCreateImageView(Device, &Info, nullptr, &ImageView));
 	}
@@ -439,7 +441,17 @@ struct FSampler
 	VkSampler Sampler = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
 
-	void Create(VkDevice InDevice)
+	void CreateTrilinear(VkDevice InDevice)
+	{
+		InternalCreate(InDevice, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR);
+	}
+
+	void CreatePoint(VkDevice InDevice)
+	{
+		InternalCreate(InDevice, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST);
+	}
+
+	void InternalCreate(VkDevice InDevice, VkFilter InMag, VkFilter InMin, VkSamplerMipmapMode InMip)
 	{
 		Device = InDevice;
 
@@ -447,9 +459,9 @@ struct FSampler
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		//VkSamplerCreateFlags    flags;
-		Info.magFilter = VK_FILTER_LINEAR;
-		Info.minFilter = VK_FILTER_LINEAR;
-		Info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		Info.magFilter = InMag;
+		Info.minFilter = InMin;
+		Info.mipmapMode = InMip;
 		//VkSamplerAddressMode    addressModeU;
 		//VkSamplerAddressMode    addressModeV;
 		//VkSamplerAddressMode    addressModeW;
@@ -458,8 +470,8 @@ struct FSampler
 		//float                   maxAnisotropy;
 		//VkBool32                compareEnable;
 		//VkCompareOp             compareOp;
-		//float                   minLod;
 		//float                   maxLod;
+		Info.maxLod = 1.0f;
 		//VkBorderColor           borderColor;
 		//VkBool32                unnormalizedCoordinates;
 		checkVk(vkCreateSampler(Device, &Info, nullptr, &Sampler));
@@ -1186,7 +1198,7 @@ protected:
 };
 
 
-inline void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask)
+inline void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, VkPipelineStageFlags DestStage, VkImage Image, VkImageLayout SrcLayout, VkAccessFlags SrcMask, VkImageLayout DestLayout, VkAccessFlags DstMask, VkImageAspectFlags AspectMask, uint32 NumMips = 1, uint32 StartMip = 0)
 {
 	VkImageMemoryBarrier Barrier;
 	MemZero(Barrier);
@@ -1200,7 +1212,8 @@ inline void ImageBarrier(FCmdBuffer* CmdBuffer, VkPipelineStageFlags SrcStage, V
 	Barrier.image = Image;
 	Barrier.subresourceRange.aspectMask = AspectMask;;
 	Barrier.subresourceRange.layerCount = 1;
-	Barrier.subresourceRange.levelCount = 1;
+	Barrier.subresourceRange.baseMipLevel = StartMip;
+	Barrier.subresourceRange.levelCount = NumMips;
 	vkCmdPipelineBarrier(CmdBuffer->CmdBuffer, SrcStage, DestStage, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
 }
 
