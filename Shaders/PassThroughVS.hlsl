@@ -1,5 +1,8 @@
 void MainVS(in uint VertexID : SV_VertexID, out float2 OutUVs : TEXCOORD0, out float4 Position : SV_Position)
 {
-	OutUVs = float2((VertexID << 1) & 2, VertexID & 2);
-	Position = float4(OutUVs * 2.0f + -1.0f, 0.0f, 1.0f);
+	Position.x = (float)(VertexID / 2) * 4.0 - 1.0;
+	Position.y = (float)(VertexID % 2) * 4.0 - 1.0;
+	Position.zw = float2(0, 1);
+	OutUVs.x = float2(VertexID / 2) * 2.0;
+	OutUVs.y = float2(VertexID % 2) * 2.0;
 }

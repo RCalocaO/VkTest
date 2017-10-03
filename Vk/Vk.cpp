@@ -185,8 +185,8 @@ struct FRenderTargetPool
 				case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
 					return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-	//			case VK_IMAGE_LAYOUT_GENERAL:
-//					return VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+				case VK_IMAGE_LAYOUT_GENERAL:
+					return VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 
 				case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
 				case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
@@ -755,8 +755,8 @@ void CreateAndFillTexture()
 			auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, DestImageView->ImageView, VK_NULL_HANDLE, GGradient.GetWidth() >> Index, GGradient.GetHeight() >> Index);
 			CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, false);
 			vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline->Pipeline);
-			Viewport.width = GGradient.GetWidth() >> Index;
-			Viewport.height = GGradient.GetHeight() >> Index;
+			Viewport.width = (float)(GGradient.GetWidth() >> Index);
+			Viewport.height = (float)(GGradient.GetHeight() >> Index);
 			Viewport.maxDepth = 1;
 			vkCmdSetViewport(CmdBuffer->CmdBuffer, 0, 1, &Viewport);
 			Scissor.extent.width = GGradient.GetWidth() >> Index;
@@ -770,7 +770,7 @@ void CreateAndFillTexture()
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
 
-			vkCmdDraw(CmdBuffer->CmdBuffer, 4, 1, 0, 0);
+			vkCmdDraw(CmdBuffer->CmdBuffer, 3, 1, 0, 0);
 			CmdBuffer->EndRenderPass();
 			ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, GGradient.GetImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 1, Index);
 		}
