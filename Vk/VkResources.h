@@ -1126,12 +1126,12 @@ public:
 		DSWrites.push_back(DSWrite);
 	}
 
-	inline void AddImage(FDescriptorSet* DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView)
+	inline void AddImage(FDescriptorSet* DescSet, uint32 Binding, const FSampler& Sampler, const FImageView& ImageView, VkImageLayout Layout)
 	{
 		check(!bClosed);
 		VkDescriptorImageInfo* ImageInfo = new VkDescriptorImageInfo;
 		MemZero(*ImageInfo);
-		ImageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		ImageInfo->imageLayout = Layout;
 		ImageInfo->imageView = ImageView.ImageView;
 		ImageInfo->sampler = Sampler.Sampler;
 		ImageInfos.push_back(ImageInfo);
@@ -1476,18 +1476,27 @@ struct FVulkanShaderCollection : FShaderCollection
 
 	void DestroyShader(FShaderHandle Handle)
 	{
-		IShader* Shader = GetShader(Handle);
+		IShader* Shader = GetVulkanShader(Handle);
 		if (Shader)
 		{
 			//#todo Sync GPU
 			Shader->Destroy();
 			delete Shader;
+			ShaderInfos[Handle.ID].Shader = nullptr;
 		}
 	}
 
 	void Destroy()
 	{
-		check(0);
+		for (auto& Info : ShaderInfos)
+		{
+			if (Info.Shader)
+			{
+				Info.Shader->Destroy();
+				delete Info.Shader;
+			}
+		}
+		ShaderInfos.clear();
 	}
 
 	virtual bool DoCompileFromSource(FShaderInfo& Info) override
