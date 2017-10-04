@@ -10,6 +10,10 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "../Meshes/tiny_obj_loader.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ASSERT(x) check(x)
+#include "../Utils/stb_image.h"
+
 namespace std
 {
 	template<> struct hash<FPosColorUVVertex>
@@ -89,13 +93,50 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 		memcpy(IndexData, &Indices[0], NumIndices * sizeof(uint32));
 	};
 	MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &ObjIB.Buffer, FillIB, sizeof(uint32) * NumIndices, this);
+
+	for (auto& Material : Loaded->materials)
+	{
+		if (!Material.diffuse_texname.empty())
+		{
+			std::string Texture = FileUtils::MakePath(BaseDir, Material.diffuse_texname);
+			std::vector<char> FileData = LoadFile(Texture.c_str());
+			if (!FileData.empty())
+			{
+				int W, H, C;
+				auto* PixelData = stbi_load_from_memory((stbi_uc*)&FileData[0], (int)FileData.size(), &W, &H, &C, 4);
+				if (PixelData)
+				{
+					FImage2DWithView* Image = new FImage2DWithView;
+					Image->Create(Device->Device, W, H, VK_FORMAT_R8G8B8A8_UNORM,
+						VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+						VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr);
+
+					uint32 Size = W * H * 4;
+
+					MapAndFillImageSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Image->Image, 
+						[&](FPrimaryCmdBuffer* CmdBuffer, void* Data, uint32 Width, uint32 Height)
+					{
+						ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, Image->Image.Image,
+							VK_IMAGE_LAYOUT_UNDEFINED, 0,
+							VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+							VK_IMAGE_ASPECT_COLOR_BIT);
+						memcpy(Data, PixelData, Size);
+					}, Size);
+					Textures[Material.diffuse_texname] = Image;
+				}
+				stbi_image_free(PixelData);
+			}
+		}
+	}
 }
 
 bool FMesh::Load(const char* Filename)
 {
 	std::string err;
 	Loaded = new FTinyObj;
-	if (!tinyobj::LoadObj(&Loaded->attrib, &Loaded->shapes, &Loaded->materials, &err, Filename, nullptr/*basepath*/, true/*triangulate*/))
+	std::string Dummy;
+	FileUtils::SplitPath(Filename, BaseDir, Dummy, true);
+	if (!tinyobj::LoadObj(&Loaded->attrib, &Loaded->shapes, &Loaded->materials, &err, Filename, BaseDir.c_str()/*basepath*/, true/*triangulate*/))
 	{
 		return false;
 	}

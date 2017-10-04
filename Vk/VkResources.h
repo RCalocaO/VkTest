@@ -1378,17 +1378,35 @@ inline void MapAndFillBufferSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffe
 	StagingBuffer->SetFence(CmdBuffer);
 }
 
+struct FOneShotCmdBuffer
+{
+	FPrimaryCmdBuffer* CmdBuffer;
+	FCmdBufferMgr* CmdBufferMgr;
+	FDevice* Device;
+	FOneShotCmdBuffer(FDevice* InDevice, FCmdBufferMgr* InCmdBufferMgr)
+		: CmdBufferMgr(InCmdBufferMgr)
+		, Device(InDevice)
+	{
+		CmdBuffer = CmdBufferMgr->AllocateCmdBuffer();
+		CmdBuffer->Begin();
+	}
+
+	~FOneShotCmdBuffer()
+	{
+		CmdBuffer->End();
+		CmdBufferMgr->Submit(CmdBuffer, Device->PresentQueue, nullptr, nullptr);
+		CmdBuffer->WaitForFence();
+	}
+};
+
 template <typename TFillLambda>
 void MapAndFillBufferSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData)
 {
-	auto* CmdBuffer = CmdBufferMgr->AllocateCmdBuffer();
-	CmdBuffer->Begin();
+	FOneShotCmdBuffer OneShotCmdBuffer(Device, CmdBufferMgr);
+	auto* CmdBuffer = OneShotCmdBuffer.CmdBuffer;
 	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size);
 	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size, UserData);
 	FlushMappedBuffer(Device->Device, StagingBuffer);
-	CmdBuffer->End();
-	CmdBufferMgr->Submit(CmdBuffer, Device->PresentQueue, nullptr, nullptr);
-	CmdBuffer->WaitForFence();
 }
 
 template <typename TFillLambda>
@@ -1396,7 +1414,7 @@ inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer
 {
 	void* Data = StagingBuffer->GetMappedData();
 	check(Data);
-	Fill(Data, DestImage->Width, DestImage->Height);
+	Fill(CmdBuffer, Data, DestImage->Width, DestImage->Height);
 
 	{
 		VkBufferImageCopy Region;
@@ -1413,6 +1431,16 @@ inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer
 	}
 
 	StagingBuffer->SetFence(CmdBuffer);
+}
+
+template <typename TFillLambda>
+void MapAndFillImageSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FImage* DestImage, TFillLambda Fill, uint32 Size)
+{
+	FOneShotCmdBuffer OneShotCmdBuffer(Device, CmdBufferMgr);
+	auto* CmdBuffer = OneShotCmdBuffer.CmdBuffer;
+	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size);
+	MapAndFillImageSync(StagingBuffer, CmdBuffer, DestImage, Fill);
+	FlushMappedBuffer(Device->Device, StagingBuffer);
 }
 
 inline void CopyColorImage(FPrimaryCmdBuffer* CmdBuffer, uint32 Width, uint32 Height, VkImage SrcImage, VkImageLayout SrcCurrentLayout, VkImage DstImage, VkImageLayout DstCurrentLayout)

@@ -31,8 +31,12 @@ struct FTinyObj;
 
 struct FMesh
 {
+	std::string BaseDir;
+
 	FVertexBuffer ObjVB;
 	FIndexBuffer ObjIB;
+
+	std::map<std::string, FImage2DWithView*> Textures;
 
 	uint32 NumVertices = 0;
 	uint32 NumIndices = 0;
@@ -41,6 +45,7 @@ struct FMesh
 
 	void Destroy()
 	{
+		check(0);
 		ObjIB.Destroy();
 		ObjVB.Destroy();
 	}
@@ -59,3 +64,5 @@ struct FMesh
 
 	FTinyObj* Loaded = nullptr;
 };
+
+void LoadTexturesForMesh(FDevice* Device, FMemManager* MemMgr, FMesh& Mesh, const std::string& BaseDir);

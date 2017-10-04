@@ -609,6 +609,7 @@ static bool LoadShadersAndGeometry()
 	{
 		return false;
 	}
+
 	GSponza.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
 #endif
 
@@ -670,7 +671,6 @@ void GenerateMips(FCmdBuffer* CmdBuffer, FImage2DWithView& Image, std::vector<FI
 	}
 }
 
-
 void CreateAndFillTexture()
 {
 	srand(0);
@@ -705,7 +705,7 @@ void CreateAndFillTexture()
 
 	{
 		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GHeightMap.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-		auto FillHeightMap = [](void* Data, uint32 Width, uint32 Height)
+		auto FillHeightMap = [](FPrimaryCmdBuffer* CmdBuffer, void* Data, uint32 Width, uint32 Height)
 		{
 			float* Out = (float*)Data;
 			while (Height--)
@@ -726,7 +726,7 @@ void CreateAndFillTexture()
 
 	{
 		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GGradient.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-		auto FillGradient = [](void* Data, uint32 Width, uint32 Height)
+		auto FillGradient = [](FPrimaryCmdBuffer* CmdBuffer, void* Data, uint32 Width, uint32 Height)
 		{
 			uint32* Out = (uint32*)Data;
 			uint32 OriginalHeight = Height;
@@ -971,7 +971,7 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
 	WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-	WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, GGradient.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, GCube.Textures.begin()->second->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);

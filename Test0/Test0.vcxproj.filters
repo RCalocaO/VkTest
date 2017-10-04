@@ -54,11 +54,14 @@
     <ClInclude Include="..\Vk\VkObj.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\Meshes\tiny_obj_loader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\Utils\Shaders.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Utils\stb_image.h">
+      <Filter>External</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Meshes\tiny_obj_loader.h">
+      <Filter>External</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
