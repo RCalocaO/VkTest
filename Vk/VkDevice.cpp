@@ -10,6 +10,7 @@
 std::string GModelName = "";
 bool GValidation = false;
 bool GRenderDoc = false;
+bool GVkTrace = false;
 
 void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLayers, std::vector<const char*>& OutExtensions)
 {
@@ -67,6 +68,18 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 				if (!strcmp(Prop.layerName, "VK_LAYER_RENDERDOC_Capture"))
 				{
 					OutLayers.push_back("VK_LAYER_RENDERDOC_Capture");
+					break;
+				}
+			}
+		}
+
+		if (GVkTrace)
+		{
+			for (auto& Prop : InstanceProperties)
+			{
+				if (!strcmp(Prop.layerName, "VK_LAYER_LUNARG_vktrace"))
+				{
+					OutLayers.push_back("VK_LAYER_LUNARG_vktrace");
 					break;
 				}
 			}

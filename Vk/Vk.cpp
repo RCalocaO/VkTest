@@ -13,6 +13,7 @@
 
 extern std::string GModelName;
 extern bool GRenderDoc;
+extern bool GVkTrace;
 extern bool GValidation;
 
 // 0 no multithreading
@@ -597,8 +598,8 @@ static bool LoadShadersAndGeometry()
 	GPosColorUVFormat.AddVertexAttribute(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(FPosColorUVVertex, u));
 
 	// Load and fill geometry
-	if (!GCube.Load("../Meshes/testcube/testcube.obj"))
-//	if (!GCube.Load("../Meshes/cube/cube.obj"))
+//	if (!GCube.Load("../Meshes/testcube/testcube.obj"))
+	if (!GCube.Load("../Meshes/cube/cube.obj"))
 	{
 		return false;
 	}
@@ -913,6 +914,10 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		else if (!_strcmpi(Token, "-renderdoc"))
 		{
 			GRenderDoc = true;
+		}
+		else if (!_strcmpi(Token, "-vktrace"))
+		{
+			GVkTrace = true;
 		}
 	}
 
