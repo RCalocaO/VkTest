@@ -48,7 +48,7 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 			auto MeshIndex = Shape.mesh.indices[i];
 			FPosColorUVVertex Vertex;
 			Vertex.x = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 0];
-			Vertex.y = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 1];
+			Vertex.y = -Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 1];
 			Vertex.z = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 2];
 			if (MeshIndex.normal_index != -1)
 			{
@@ -59,8 +59,17 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 					Loaded->attrib.normals[3 * MeshIndex.normal_index + 2] })
 					);
 			}
-			Vertex.u = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 0];
-			Vertex.v = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 1];
+
+			if (MeshIndex.texcoord_index != -1)
+			{
+				Vertex.u = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 0];
+				Vertex.v = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 1];
+			}
+			else
+			{
+				Vertex.u = 0;
+				Vertex.v = 0;
+			}
 
 			//if (uniqueVertices.count(Vertex) == 0)
 			{

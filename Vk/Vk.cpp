@@ -11,10 +11,9 @@
 #include "../Utils/glm/glm/mat4x4.hpp"
 #include "../Utils/glm/glm/gtc/matrix_transform.hpp"
 
+extern std::string GModelName;
 extern bool GRenderDoc;
 extern bool GValidation;
-
-#define USE_SPONZA 0
 
 // 0 no multithreading
 // 1 inside a render pass
@@ -78,7 +77,7 @@ static FQueryMgr GQueryMgr;
 static FVulkanShaderCollection GShaderCollection;
 
 static FMesh GCube;
-static FMesh GSponza;
+static FMesh GModel;
 static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
 struct FCreateFloorUB
@@ -605,14 +604,15 @@ static bool LoadShadersAndGeometry()
 	}
 	GCube.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
 
-#if USE_SPONZA
-	if (!GSponza.Load("../Meshes/DabrovicSponza/sponza.obj"))
+	if (!GModelName.empty())
 	{
-		return false;
-	}
+		if (!GModel.Load(GModelName.c_str()))
+		{
+			return false;
+		}
 
-	GSponza.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
-#endif
+		GModel.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+	}
 
 	return true;
 }
@@ -889,6 +889,27 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 		{
 			GValidation = true;
 		}
+		else if (!_strnicmp(Token, "-model=", 7))
+		{
+			auto* Model = Token + 7;
+			if (*Model == '"')
+			{
+				++Model;
+				auto* End = strchr(Model, '"');
+				check(End);
+				GModelName = Model;
+				GModelName = GModelName.substr(0, End - Model);
+			}
+			else
+			{
+				auto* End = strchr(Model, ' ');
+				GModelName = Model;
+				if (End)
+				{
+					GModelName = GModelName.substr(0, End - Model);
+				}
+			}
+		}
 		else if (!_strcmpi(Token, "-renderdoc"))
 		{
 			GRenderDoc = true;
@@ -962,7 +983,7 @@ static void DrawMesh(FCmdBuffer* CmdBuffer, FMesh& Mesh, TSetDescriptors SetDesc
 	for (auto* Batch : Mesh.Batches)
 	{
 		FImage2DWithView* Image = Batch->Image ? Batch->Image : &GGradient;
-		SetDescriptors(Batch->Image);
+		SetDescriptors(Image);
 		CmdBind(CmdBuffer, &Batch->ObjVB);
 		CmdBind(CmdBuffer, &Batch->ObjIB);
 		vkCmdDrawIndexed(CmdBuffer->CmdBuffer, Batch->NumIndices, 1, 0, 0, 0);
@@ -995,12 +1016,12 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 		});
 }
 
-static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
 	FObjUB& ObjUB = *GObjUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
-	DrawMesh(CmdBuffer, GSponza,
+	DrawMesh(CmdBuffer, GModel,
 		[&](FImage2DWithView* Image)
 		{
 			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
@@ -1014,8 +1035,8 @@ static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* C
 
 			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 		});
-	//CmdBind(CmdBuffer, &GSponza.ObjVB);
-	//vkCmdDraw(CmdBuffer->CmdBuffer, GSponza.GetNumVertices(), 1, 0, 0);
+	//CmdBind(CmdBuffer, &GModel.ObjVB);
+	//vkCmdDraw(CmdBuffer->CmdBuffer, GModel.GetNumVertices(), 1, 0, 0);
 }
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
@@ -1080,12 +1101,15 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 
 	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);
 
-#if USE_SPONZA
-	DrawSponza(GfxPipeline, Device, CmdBuffer);
-#else
-	DrawFloor(GfxPipeline, Device, CmdBuffer);
-	DrawCube(GfxPipeline, Device, CmdBuffer);
-#endif
+	if (GModelName.empty())
+	{
+		DrawFloor(GfxPipeline, Device, CmdBuffer);
+		DrawCube(GfxPipeline, Device, CmdBuffer);
+	}
+	else
+	{
+		DrawModel(GfxPipeline, Device, CmdBuffer);
+	}
 }
 
 static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, FImage2DWithView* ColorBuffer, FImage2DWithView* DepthBuffer, FImage2DWithView* ResolveColorBuffer, FImage2DWithView* ResolveDepth)
@@ -1341,9 +1365,7 @@ void DoDeinit()
 	GCreateFloorUB.Destroy();
 	GObjUB.Destroy();
 	GCube.Destroy();
-#if USE_SPONZA
-	GSponza.Destroy();
-#endif
+	GModel.Destroy();
 	GIdentityUB.Destroy();
 
 	GTrilinearSampler.Destroy();

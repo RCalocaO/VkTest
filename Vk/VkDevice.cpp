@@ -7,6 +7,7 @@
 #include <set>
 #include "../../SPIRV-Cross/spirv_cross.hpp"
 
+std::string GModelName = "";
 bool GValidation = false;
 bool GRenderDoc = false;
 

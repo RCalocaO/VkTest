@@ -56,6 +56,7 @@ struct FMesh
 			}
 		}
 
+		check(0);
 		return nullptr;
 	}
 
