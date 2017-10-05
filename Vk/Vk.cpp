@@ -598,7 +598,8 @@ static bool LoadShadersAndGeometry()
 	GPosColorUVFormat.AddVertexAttribute(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(FPosColorUVVertex, u));
 
 	// Load and fill geometry
-	if (!GCube.Load("../Meshes/cube/cube.obj"))
+	if (!GCube.Load("../Meshes/testcube/testcube.obj"))
+//	if (!GCube.Load("../Meshes/cube/cube.obj"))
 	{
 		return false;
 	}
@@ -955,6 +956,19 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	return true;
 }
 
+template <typename TSetDescriptors>
+static void DrawMesh(FCmdBuffer* CmdBuffer, FMesh& Mesh, TSetDescriptors SetDescriptors)
+{
+	for (auto* Batch : Mesh.Batches)
+	{
+		FImage2DWithView* Image = Batch->Image ? Batch->Image : &GGradient;
+		SetDescriptors(Batch->Image);
+		CmdBind(CmdBuffer, &Batch->ObjVB);
+		CmdBind(CmdBuffer, &Batch->ObjIB);
+		vkCmdDrawIndexed(CmdBuffer->CmdBuffer, Batch->NumIndices, 1, 0, 0, 0);
+	}
+}
+
 static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
 	FObjUB& ObjUB = *GObjUB.GetMappedData();
@@ -965,20 +979,20 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 	}
 	ObjUB.Obj = FMatrix4x4::GetRotationY(ToRadians(AngleDegrees));
 
-	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+	DrawMesh(CmdBuffer, GCube,
+		[&](FImage2DWithView* Image)
+		{
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
-	FWriteDescriptors WriteDescriptors;
-	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-	WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-	WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, GCube.Textures.begin()->second->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+			FWriteDescriptors WriteDescriptors;
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+			WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
+			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
-	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
-
-	CmdBind(CmdBuffer, &GCube.ObjVB);
-	CmdBind(CmdBuffer, &GCube.ObjIB);
-	vkCmdDrawIndexed(CmdBuffer->CmdBuffer, GCube.GetNumIndices(), 1, 0, 0, 0);
+			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
+		});
 }
 
 static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
@@ -986,19 +1000,22 @@ static void DrawSponza(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* C
 	FObjUB& ObjUB = *GObjUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
-	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+	DrawMesh(CmdBuffer, GSponza,
+		[&](FImage2DWithView* Image)
+		{
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
-	FWriteDescriptors WriteDescriptors;
-	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-	WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-	WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, /*GCheckerboardTexture*/GHeightMap.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+			FWriteDescriptors WriteDescriptors;
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+			WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
+			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
-	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
-
-	CmdBind(CmdBuffer, &GSponza.ObjVB);
-	vkCmdDraw(CmdBuffer->CmdBuffer, GSponza.GetNumVertices(), 1, 0, 0);
+			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
+		});
+	//CmdBind(CmdBuffer, &GSponza.ObjVB);
+	//vkCmdDraw(CmdBuffer->CmdBuffer, GSponza.GetNumVertices(), 1, 0, 0);
 }
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)

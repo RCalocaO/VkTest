@@ -38,34 +38,38 @@ struct FTinyObj
 void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr)
 {
 	std::unordered_map<FPosColorUVVertex, uint32> uniqueVertices;
-	std::vector<FPosColorUVVertex> Vertices;
-	std::vector<uint32> Indices;
+	std::map<uint32, std::vector<FPosColorUVVertex>> Vertices;
+	std::map<uint32, std::vector<uint32>> Indices;
+	std::set<uint32> MaterialIndices;
 	for (auto& Shape : Loaded->shapes)
 	{
-		for (const auto& index : Shape.mesh.indices)
+		for (int32 i = 0; i < Shape.mesh.indices.size(); ++i)
 		{
+			auto MeshIndex = Shape.mesh.indices[i];
 			FPosColorUVVertex Vertex;
-			Vertex.x = Loaded->attrib.vertices[3 * index.vertex_index + 0];
-			Vertex.y = Loaded->attrib.vertices[3 * index.vertex_index + 1];
-			Vertex.z = Loaded->attrib.vertices[3 * index.vertex_index + 2];
-			if (index.normal_index != -1)
+			Vertex.x = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 0];
+			Vertex.y = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 1];
+			Vertex.z = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 2];
+			if (MeshIndex.normal_index != -1)
 			{
 				Vertex.Color = PackNormalToU32(
 					FVector3({
-					Loaded->attrib.normals[3 * index.normal_index + 0],
-					Loaded->attrib.normals[3 * index.normal_index + 1],
-					Loaded->attrib.normals[3 * index.normal_index + 2] })
+					Loaded->attrib.normals[3 * MeshIndex.normal_index + 0],
+					Loaded->attrib.normals[3 * MeshIndex.normal_index + 1],
+					Loaded->attrib.normals[3 * MeshIndex.normal_index + 2] })
 					);
 			}
-			Vertex.u = Loaded->attrib.texcoords[2 * index.texcoord_index + 0];
-			Vertex.v = Loaded->attrib.texcoords[2 * index.texcoord_index + 1];
+			Vertex.u = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 0];
+			Vertex.v = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 1];
 
 			//if (uniqueVertices.count(Vertex) == 0)
-			{				
-				uint32 VertexIndex = (uint32)Vertices.size();
+			{
+				int MaterialIndex = Shape.mesh.material_ids[i / 3];
+				uint32 VertexIndex = (uint32)Vertices[MaterialIndex].size();
 				uniqueVertices[Vertex] = VertexIndex;
-				Vertices.push_back(Vertex);
-				Indices.push_back(VertexIndex);
+				Vertices[MaterialIndex].push_back(Vertex);
+				Indices[MaterialIndex].push_back(VertexIndex);
+				MaterialIndices.insert(MaterialIndex);
 			}
 /*
 			else
@@ -75,27 +79,34 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 		}
 	}
 
-	NumVertices = (uint32)Vertices.size();
-
-	ObjVB.Create(Device->Device, sizeof(FPosColorUVVertex) * NumVertices, MemMgr);
-
-	auto FillVB = [&](void* VertexData, void* UserData)
+	for (auto MaterialIndex : MaterialIndices)
 	{
-		memcpy(VertexData, &Vertices[0], NumVertices * sizeof(FPosColorUVVertex));
-	};
-	MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &ObjVB.Buffer, FillVB, sizeof(FPosColorUVVertex) * NumVertices, this);
+		auto* Batch = new FBatch;
+		Batch->NumVertices = (uint32)Vertices[MaterialIndex].size();
 
-	NumIndices = (uint32)Indices.size();
-	ObjIB.Create(Device->Device, NumIndices, VK_INDEX_TYPE_UINT32, MemMgr);
+		Batch->ObjVB.Create(Device->Device, sizeof(FPosColorUVVertex) * Batch->NumVertices, MemMgr);
 
-	auto FillIB = [&](void* IndexData, void* UserData)
+		auto FillVB = [&](void* VertexData, void* UserData)
+		{
+			memcpy(VertexData, &Vertices[MaterialIndex][0], Batch->NumVertices * sizeof(FPosColorUVVertex));
+		};
+		MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Batch->ObjVB.Buffer, FillVB, sizeof(FPosColorUVVertex) * Batch->NumVertices, this);
+
+		Batch->NumIndices = (uint32)Indices[MaterialIndex].size();
+		Batch->ObjIB.Create(Device->Device, Batch->NumIndices, VK_INDEX_TYPE_UINT32, MemMgr);
+
+		auto FillIB = [&](void* IndexData, void* UserData)
+		{
+			memcpy(IndexData, &Indices[MaterialIndex][0], Batch->NumIndices * sizeof(uint32));
+		};
+		MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Batch->ObjIB.Buffer, FillIB, sizeof(uint32) * Batch->NumIndices, this);
+		Batch->MaterialID = (int)MaterialIndex;
+		Batches.push_back(Batch);
+	}
+
+	for (int32 Index = 0; Index < Loaded->materials.size(); ++Index)
 	{
-		memcpy(IndexData, &Indices[0], NumIndices * sizeof(uint32));
-	};
-	MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &ObjIB.Buffer, FillIB, sizeof(uint32) * NumIndices, this);
-
-	for (auto& Material : Loaded->materials)
-	{
+		auto& Material = Loaded->materials[Index];
 		if (!Material.diffuse_texname.empty())
 		{
 			std::string Texture = FileUtils::MakePath(BaseDir, Material.diffuse_texname);
@@ -123,6 +134,11 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 						memcpy(Data, PixelData, Size);
 					}, Size);
 					Textures[Material.diffuse_texname] = Image;
+					FBatch* Batch = FindBatchByMaterialID(Index);
+					if (Batch)
+					{
+						Batch->Image = Image;
+					}
 				}
 				stbi_image_free(PixelData);
 			}

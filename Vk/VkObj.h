@@ -33,34 +33,52 @@ struct FMesh
 {
 	std::string BaseDir;
 
-	FVertexBuffer ObjVB;
-	FIndexBuffer ObjIB;
-
 	std::map<std::string, FImage2DWithView*> Textures;
 
-	uint32 NumVertices = 0;
-	uint32 NumIndices = 0;
+	struct FBatch
+	{
+		FVertexBuffer ObjVB;
+		FIndexBuffer ObjIB;
+		FImage2DWithView* Image = nullptr;
+		uint32 NumVertices = 0;
+		uint32 NumIndices = 0;
+		int MaterialID = -1;
+	};
+	std::vector<FBatch*> Batches;
+
+	FBatch* FindBatchByMaterialID(int MaterialID)
+	{
+		for (auto* Batch : Batches)
+		{
+			if (Batch->MaterialID == MaterialID)
+			{
+				return Batch;
+			}
+		}
+
+		return nullptr;
+	}
 
 	void Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr);
 
 	void Destroy()
 	{
 		check(0);
-		ObjIB.Destroy();
-		ObjVB.Destroy();
+		//ObjIB.Destroy();
+		//ObjVB.Destroy();
 	}
 
 	bool Load(const char* Filename);
 
-	uint32 GetNumVertices() const
-	{
-		return NumVertices;
-	}
+	//uint32 GetNumVertices() const
+	//{
+	//	return NumVertices;
+	//}
 
-	uint32 GetNumIndices() const
-	{
-		return NumIndices;
-	}
+	//uint32 GetNumIndices() const
+	//{
+	//	return NumIndices;
+	//}
 
 	FTinyObj* Loaded = nullptr;
 };
