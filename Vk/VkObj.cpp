@@ -35,35 +35,35 @@ struct FTinyObj
 	std::vector<tinyobj::material_t> materials;
 };
 
-void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr)
+void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr)
 {
 	std::unordered_map<FPosColorUVVertex, uint32> uniqueVertices;
 	std::map<uint32, std::vector<FPosColorUVVertex>> Vertices;
 	std::map<uint32, std::vector<uint32>> Indices;
 	std::set<uint32> MaterialIndices;
-	for (auto& Shape : Loaded->shapes)
+	for (auto& Shape : Obj->Loaded->shapes)
 	{
 		for (int32 i = 0; i < Shape.mesh.indices.size(); ++i)
 		{
 			auto MeshIndex = Shape.mesh.indices[i];
 			FPosColorUVVertex Vertex;
-			Vertex.x = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 0];
-			Vertex.y = -Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 1];
-			Vertex.z = Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 2];
+			Vertex.x = Obj->Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 0];
+			Vertex.y = -Obj->Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 1];
+			Vertex.z = Obj->Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 2];
 			if (MeshIndex.normal_index != -1)
 			{
 				Vertex.Color = PackNormalToU32(
 					FVector3({
-					Loaded->attrib.normals[3 * MeshIndex.normal_index + 0],
-					Loaded->attrib.normals[3 * MeshIndex.normal_index + 1],
-					Loaded->attrib.normals[3 * MeshIndex.normal_index + 2] })
+					Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 0],
+					Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 1],
+					Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 2] })
 					);
 			}
 
 			if (MeshIndex.texcoord_index != -1)
 			{
-				Vertex.u = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 0];
-				Vertex.v = Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 1];
+				Vertex.u = Obj->Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 0];
+				Vertex.v = Obj->Loaded->attrib.texcoords[2 * MeshIndex.texcoord_index + 1];
 			}
 			else
 			{
@@ -113,12 +113,12 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 		Batches.push_back(Batch);
 	}
 
-	for (int32 Index = 0; Index < Loaded->materials.size(); ++Index)
+	for (int32 Index = 0; Index < Obj->Loaded->materials.size(); ++Index)
 	{
-		auto& Material = Loaded->materials[Index];
+		auto& Material = Obj->Loaded->materials[Index];
 		if (!Material.diffuse_texname.empty())
 		{
-			std::string Texture = FileUtils::MakePath(BaseDir, Material.diffuse_texname);
+			std::string Texture = FileUtils::MakePath(Obj->BaseDir, Material.diffuse_texname);
 			std::vector<char> FileData = LoadFile(Texture.c_str());
 			if (!FileData.empty())
 			{
@@ -155,7 +155,7 @@ void FMesh::Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* S
 	}
 }
 
-bool FMesh::Load(const char* Filename)
+bool FObj::Load(const char* Filename)
 {
 	std::string err;
 	Loaded = new FTinyObj;

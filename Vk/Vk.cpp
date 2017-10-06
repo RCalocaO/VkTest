@@ -84,8 +84,10 @@ static FStagingManager GStagingManager;
 static FQueryMgr GQueryMgr;
 static FVulkanShaderCollection GShaderCollection;
 
+static FObj GCubeObj;
 static FMesh GCube;
 static std::vector<FMeshInstance> GCubeInstances;
+static FObj GModelObj;
 static FMesh GModel;
 static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
@@ -607,20 +609,20 @@ static bool LoadShadersAndGeometry()
 
 	// Load and fill geometry
 //	if (!GCube.Load("../Meshes/testcube/testcube.obj"))
-	if (!GCube.Load("../Meshes/cube/cube.obj"))
+	if (!GCubeObj.Load("../Meshes/cube/cube.obj"))
 	{
 		return false;
 	}
-	GCube.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+	GCube.CreateFromObj(&GCubeObj, &GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
 
 	if (!GModelName.empty())
 	{
-		if (!GModel.Load(GModelName.c_str()))
+		if (!GModelObj.Load(GModelName.c_str()))
 		{
 			return false;
 		}
 
-		GModel.Create(&GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+		GModel.CreateFromObj(&GModelObj, &GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
 	}
 
 	return true;

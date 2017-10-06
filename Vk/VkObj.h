@@ -28,11 +28,16 @@ struct FPosColorUVVertex
 
 struct FTinyObj;
 
+struct FObj
+{
+	std::string BaseDir;
+	bool Load(const char* Filename);
+	FTinyObj* Loaded = nullptr;
+};
+
 
 struct FMesh
 {
-	std::string BaseDir;
-
 	std::map<std::string, FImage2DWithView*> Textures;
 
 	struct FBatch
@@ -60,7 +65,7 @@ struct FMesh
 		return nullptr;
 	}
 
-	void Create(FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr);
+	void CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr);
 
 	void Destroy()
 	{
@@ -68,20 +73,6 @@ struct FMesh
 		//ObjIB.Destroy();
 		//ObjVB.Destroy();
 	}
-
-	bool Load(const char* Filename);
-
-	//uint32 GetNumVertices() const
-	//{
-	//	return NumVertices;
-	//}
-
-	//uint32 GetNumIndices() const
-	//{
-	//	return NumIndices;
-	//}
-
-	FTinyObj* Loaded = nullptr;
 };
 
 
