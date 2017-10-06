@@ -679,7 +679,7 @@ void GenerateMips(FCmdBuffer* CmdBuffer, FImage2DWithView& Image, std::vector<FI
 
 		vkCmdDraw(CmdBuffer->CmdBuffer, 3, 1, 0, 0);
 		CmdBuffer->EndRenderPass();
-		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, Image.GetImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 1, Index);
+		ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, Image.GetImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 1, Index);
 	}
 }
 
@@ -1133,7 +1133,7 @@ static void SetDynamicStates(VkCommandBuffer CmdBuffer, uint32 Width, uint32 Hei
 static void UpdateCamera()
 {
 	FViewUB& ViewUB = *GViewUB.GetMappedData();
-	static const float RotateSpeed = 0.05f;
+	static const float RotateSpeed = 0.5f;
 	static const float StepSpeed = 0.001f;
 	GCamera.XRotation += (GControl.MouseMoveX * PI / 180.0f) * RotateSpeed;
 	GCamera.YRotation += (GControl.MouseMoveY * PI / 180.0f) * RotateSpeed;
@@ -1148,7 +1148,7 @@ static void UpdateCamera()
 	GRequestControl.MouseMoveY = 0;
 	GControl.StepDirection ={0, 0, 0};
 	ViewUB.View.Rows[3] = FVector4(GCamera.Pos, 1);
-	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 1000.0f);
+	ViewUB.Proj = CalculateProjectionMatrix(ToRadians(60), (float)GSwapchain.GetWidth() / (float)GSwapchain.GetHeight(), 0.1f, 4000.0f);
 }
 
 
