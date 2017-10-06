@@ -77,7 +77,9 @@ static FCamera GCamera;
 static FInstance GInstance;
 static FDevice GDevice;
 static FMemManager GMemMgr;
-static FCmdBufferMgr GCmdBufferMgr;
+static FCmdBufferMgr GGfxCmdBufferMgr;
+static FCmdBufferMgr GTransferCmdBufferMgr;
+static FSemaphore GTransferToComputeSemaphore;
 static FSwapchain GSwapchain;
 static FDescriptorPool GDescriptorPool;
 static FStagingManager GStagingManager;
@@ -613,7 +615,7 @@ static bool LoadShadersAndGeometry()
 	{
 		return false;
 	}
-	GCube.CreateFromObj(&GCubeObj, &GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+	GCube.CreateFromObj(&GCubeObj, &GDevice, &GGfxCmdBufferMgr, &GStagingManager, &GMemMgr);
 
 	if (!GModelName.empty())
 	{
@@ -622,7 +624,7 @@ static bool LoadShadersAndGeometry()
 			return false;
 		}
 
-		GModel.CreateFromObj(&GModelObj, &GDevice, &GCmdBufferMgr, &GStagingManager, &GMemMgr);
+		GModel.CreateFromObj(&GModelObj, &GDevice, &GGfxCmdBufferMgr, &GStagingManager, &GMemMgr);
 	}
 
 	return true;
@@ -694,7 +696,7 @@ void CreateAndFillTexture()
 
 	FComputePipeline* Pipeline = GObjectCache.GetOrCreateComputePipeline(&GFillTexturePSO);
 
-	auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+	auto* CmdBuffer = GGfxCmdBufferMgr.AllocateCmdBuffer();
 	CmdBuffer->Begin();
 
 	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, GCheckerboardTexture.GetImage(), VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -793,7 +795,9 @@ void CreateAndFillTexture()
 	GenerateMips(CmdBuffer, GGradient, ImageViews);
 
 	CmdBuffer->End();
-	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+
+	GGfxCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, {}, nullptr);
+	GDescriptorPool.RefreshFences();
 	CmdBuffer->WaitForFence();
 	for (FImageView* View : ImageViews)
 	{
@@ -862,11 +866,12 @@ static void SetupFloor()
 
 	GFloorIB.Create(GDevice.Device, 3 * 2 * (NumQuadsX - 1) * (NumQuadsZ - 1), VK_INDEX_TYPE_UINT32, &GMemMgr, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	{
-		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+		auto* CmdBuffer = GGfxCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		FillFloor(CmdBuffer);
 		CmdBuffer->End();
-		GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		GGfxCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, {}, nullptr);
+		GDescriptorPool.RefreshFences();
 		CmdBuffer->WaitForFence();
 	}
 /*
@@ -936,7 +941,9 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GSwapchain.Create(GInstance.Surface, GDevice.PhysicalDevice, GDevice.Device, GInstance.Surface, Width, Height);
 
-	GCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
+	GGfxCmdBufferMgr.Create(GDevice.Device, GDevice.PresentQueueFamilyIndex);
+	GTransferCmdBufferMgr.Create(GDevice.Device, GDevice.TransferQueueFamilyIndex);
+	GTransferToComputeSemaphore.Create(GDevice.Device);
 
 	GMemMgr.Create(GDevice.Device, GDevice.PhysicalDevice);
 
@@ -981,11 +988,12 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	{
 		// Setup on Present layout
-		auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+		auto* CmdBuffer = GGfxCmdBufferMgr.AllocateCmdBuffer();
 		CmdBuffer->Begin();
 		GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
 		CmdBuffer->End();
-		GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+		GGfxCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, {}, nullptr);
+		GDescriptorPool.RefreshFences();
 		CmdBuffer->WaitForFence();
 	}
 
@@ -1037,7 +1045,7 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 }
 
 */
-static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* GfxCmdBuffer, FCmdBuffer* TransferCmdBuffer)
 {
 	static float AngleDegrees[NUM_CUBES] = {0};
 	for (int32 Index = 0; Index < (int32)GCubeInstances.size(); ++Index)
@@ -1056,7 +1064,7 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 		ObjUB.Obj.Set(3, 1, -Index * 10.0f / NUM_CUBES);
 		ObjUB.Obj.Set(3, 2, (Y - NUM_CUBES_Y / 2.0f) * 3);
 
-		DrawMesh(CmdBuffer, GCube,
+		DrawMesh(GfxCmdBuffer, GCube,
 			[&](FImage2DWithView* Image)
 		{
 			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
@@ -1068,7 +1076,7 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
-			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
+			DescriptorSet->Bind(GfxCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 		});
 	}
 }
@@ -1152,39 +1160,39 @@ static void UpdateCamera()
 }
 
 
-static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBuffer* CmdBuffer, uint32 Width, uint32 Height)
+static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBuffer* GfxCmdBuffer, FCmdBuffer* TransferCmdBuffer, uint32 Width, uint32 Height)
 {
 	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
-	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
+	vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
-	SetDynamicStates(CmdBuffer->CmdBuffer, Width, Height);
+	SetDynamicStates(GfxCmdBuffer->CmdBuffer, Width, Height);
 
 	if (GModelName.empty())
 	{
-		DrawFloor(GfxPipeline, Device, CmdBuffer);
+		DrawFloor(GfxPipeline, Device, GfxCmdBuffer);
 		//DrawCube(GfxPipeline, Device, CmdBuffer);
-		DrawCubes(GfxPipeline, Device, CmdBuffer);
+		DrawCubes(GfxPipeline, Device, GfxCmdBuffer, TransferCmdBuffer);
 	}
 	else
 	{
-		DrawModel(GfxPipeline, Device, CmdBuffer);
+		DrawModel(GfxPipeline, Device, GfxCmdBuffer);
 	}
 }
 
-static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, FImage2DWithView* ColorBuffer, FImage2DWithView* DepthBuffer, FImage2DWithView* ResolveColorBuffer, FImage2DWithView* ResolveDepth)
+static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* GfxCmdBuffer, FPrimaryCmdBuffer* TransferCmdBuffer, FImage2DWithView* ColorBuffer, FImage2DWithView* DepthBuffer, FImage2DWithView* ResolveColorBuffer, FImage2DWithView* ResolveDepth)
 {
 	UpdateCamera();
 
-	FillFloor(CmdBuffer);
+	FillFloor(GfxCmdBuffer);
 
 	VkFormat ColorFormat = ColorBuffer->GetFormat();
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(ColorBuffer->GetWidth(), ColorBuffer->GetHeight(), 1, &ColorFormat, DepthBuffer->GetFormat(), ColorBuffer->Image.Samples, ResolveColorBuffer, ResolveDepth);
 	auto* Framebuffer = GObjectCache.GetOrCreateFramebuffer(RenderPass->RenderPass, ColorBuffer->GetImageView(), DepthBuffer->GetImageView(), ColorBuffer->GetWidth(), ColorBuffer->GetHeight(), ResolveColorBuffer ? ResolveColorBuffer->GetImageView() : VK_NULL_HANDLE, ResolveDepth ? ResolveDepth->GetImageView() : VK_NULL_HANDLE);
 
-	CmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED == 1);
+	GfxCmdBuffer->BeginRenderPass(RenderPass->RenderPass, *Framebuffer, TRY_MULTITHREADED == 1);
 #if TRY_MULTITHREADED == 1
 	{
-		GThread.ParentCmdBuffer = CmdBuffer;
+		GThread.ParentCmdBuffer = GfxCmdBuffer;
 		GThread.Width = ColorBuffer->GetWidth();
 		GThread.Height = ColorBuffer->GetHeight();
 		GThread.RenderPass = RenderPass;
@@ -1192,13 +1200,13 @@ static void RenderFrame(VkDevice Device, FPrimaryCmdBuffer* CmdBuffer, FImage2DW
 		ResetEvent(GThread.DoneEvent);
 		SetEvent(GThread.StartEvent);
 		WaitForSingleObject(GThread.DoneEvent, INFINITE);
-		CmdBuffer->ExecuteSecondary();
+		GfxCmdBuffer->ExecuteSecondary();
 	}
 #else
-	InternalRenderFrame(Device, RenderPass, CmdBuffer, ColorBuffer->GetWidth(), ColorBuffer->GetHeight());
+	InternalRenderFrame(Device, RenderPass, GfxCmdBuffer, TransferCmdBuffer, ColorBuffer->GetWidth(), ColorBuffer->GetHeight());
 #endif
 
-	CmdBuffer->EndRenderPass();
+	GfxCmdBuffer->EndRenderPass();
 }
 
 void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntry* SceneColorEntry, FRenderTargetPool::FEntry* SceneColorAfterPostEntry)
@@ -1277,12 +1285,16 @@ void DoRender()
 	{
 		GRequestControl.DoRecompileShaders = false;
 		vkDeviceWaitIdle(GDevice.Device);
-		GCmdBufferMgr.Update();
+		GGfxCmdBufferMgr.Update();
+		GTransferCmdBufferMgr.Update();
 		GShaderCollection.ReloadShaders();
 	}
 
-	auto* CmdBuffer = GCmdBufferMgr.GetActivePrimaryCmdBuffer();
-	CmdBuffer->Begin();
+	auto* TransferCmdBuffer = GTransferCmdBufferMgr.GetActivePrimaryCmdBuffer();
+	TransferCmdBuffer->Begin();
+
+	auto* GfxCmdBuffer = GGfxCmdBufferMgr.GetActivePrimaryCmdBuffer();
+	GfxCmdBuffer->Begin();
 	float TimeInMS = GQueryMgr.ReadLastMSResult();
 	if (TimeInMS != 0.0f)
 	{
@@ -1290,18 +1302,18 @@ void DoRender()
 		sprintf_s(Text, "%.3f ms (%f FPS)", TimeInMS, (float)(1000.0f / TimeInMS));
 		::SetWindowTextA(GInstance.Window, Text);
 	}
-	GQueryMgr.BeginTime(CmdBuffer);
+	GQueryMgr.BeginTime(GfxCmdBuffer);
 
 	auto* SceneColor = GRenderTargetPool.Acquire(GControl.DoMSAA ? "SceneColorMSAA" : "SceneColor", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, GControl.DoMSAA ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
 
-	SceneColor->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	SceneColor->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 	//TestCompute(CmdBuffer);
 
 	VkFormat ColorFormat = GSwapchain.Format;
 
 	auto* DepthBuffer = GRenderTargetPool.Acquire("DepthBuffer", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, SceneColor->Texture.Image.Samples);
-	DepthBuffer->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	DepthBuffer->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
 	if (GControl.DoMSAA)
 	{
@@ -1321,12 +1333,12 @@ void DoRender()
 		vkCmdResolveImage(CmdBuffer->CmdBuffer, MSAA->Texture.GetImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, SceneColor->Texture.GetImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1, &Region);
 */
 		auto* ResolvedSceneColor = GRenderTargetPool.Acquire("SceneColor", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
-		ResolvedSceneColor->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+		ResolvedSceneColor->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 		auto* ResolvedDepth = GRenderTargetPool.Acquire("Depth", GSwapchain.GetWidth(), GSwapchain.GetHeight(), DepthBuffer->Texture.GetFormat(), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
-		ResolvedDepth->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+		ResolvedDepth->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-		RenderFrame(GDevice.Device, CmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, &ResolvedSceneColor->Texture, &ResolvedDepth->Texture);
+		RenderFrame(GDevice.Device, GfxCmdBuffer, TransferCmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, &ResolvedSceneColor->Texture, &ResolvedDepth->Texture);
 
 		auto* MSAA = SceneColor;
 		GRenderTargetPool.Release(MSAA);
@@ -1337,7 +1349,7 @@ void DoRender()
 	}
 	else
 	{
-		RenderFrame(GDevice.Device, CmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, nullptr, nullptr);
+		RenderFrame(GDevice.Device, GfxCmdBuffer, TransferCmdBuffer, &SceneColor->Texture, &DepthBuffer->Texture, nullptr, nullptr);
 	}
 	GRenderTargetPool.Release(DepthBuffer);
 
@@ -1345,7 +1357,7 @@ void DoRender()
 	{
 #if TRY_MULTITHREADED == 2
 		check(0);
-		GThread.ParentCmdBuffer = CmdBuffer;
+		GThread.ParentCmdBuffer = GfxCmdBuffer;
 		GThread.Width = 0;
 		GThread.Height = 0;
 		GThread.RenderPass = nullptr;
@@ -1353,34 +1365,36 @@ void DoRender()
 		ResetEvent(GThread.DoneEvent);
 		SetEvent(GThread.StartEvent);
 		WaitForSingleObject(GThread.DoneEvent, INFINITE);
-		CmdBuffer->ExecuteSecondary();
+		GfxCmdBuffer->ExecuteSecondary();
 #else
 		auto* PrePost = SceneColor;
 		SceneColor = GRenderTargetPool.Acquire("SceneColor", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
-		SceneColor->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-		RenderPost(GDevice.Device, CmdBuffer, PrePost, SceneColor);
+		SceneColor->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+		RenderPost(GDevice.Device, GfxCmdBuffer, PrePost, SceneColor);
 #endif
 	}
 
 	// Blit post into scene color
 	GSwapchain.AcquireNextImage();
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(GfxCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GSwapchain.Images[GSwapchain.AcquiredImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	{
 		uint32 Width = std::min(GSwapchain.GetWidth(), SceneColor->Texture.GetWidth());
 		uint32 Height = std::min(GSwapchain.GetHeight(), SceneColor->Texture.GetHeight());
-		SceneColor->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		BlitColorImage(CmdBuffer, Width, Height, SceneColor->Texture.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
+		SceneColor->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		BlitColorImage(GfxCmdBuffer, Width, Height, SceneColor->Texture.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_UNDEFINED);
 		GRenderTargetPool.Release(SceneColor);
 	}
-	ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	ImageBarrier(GfxCmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, GSwapchain.GetAcquiredImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_MEMORY_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	GQueryMgr.EndTime(CmdBuffer);
+	GQueryMgr.EndTime(GfxCmdBuffer);
 
-	CmdBuffer->End();
+	GfxCmdBuffer->End();
 
-	// First submit needs to wait for present semaphore
-	GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, &GSwapchain.PresentCompleteSemaphores[GSwapchain.PresentCompleteSemaphoreIndex], &GSwapchain.RenderingSemaphores[GSwapchain.AcquiredImageIndex]);
+	TransferCmdBuffer->End();
+	GTransferCmdBufferMgr.Submit(TransferCmdBuffer, GDevice.TransferQueue, {}, &GTransferToComputeSemaphore);
+	GGfxCmdBufferMgr.Submit(GfxCmdBuffer, GDevice.PresentQueue, {&GTransferToComputeSemaphore, &GSwapchain.PresentCompleteSemaphores[GSwapchain.PresentCompleteSemaphoreIndex]}, &GSwapchain.RenderingSemaphores[GSwapchain.AcquiredImageIndex]);
+	GDescriptorPool.RefreshFences();
 
 	GSwapchain.Present(GDevice.PresentQueue);
 }
@@ -1397,11 +1411,12 @@ void DoResize(uint32 Width, uint32 Height)
 
 		{
 			// Setup on Present layout
-			auto* CmdBuffer = GCmdBufferMgr.AllocateCmdBuffer();
+			auto* CmdBuffer = GGfxCmdBufferMgr.AllocateCmdBuffer();
 			CmdBuffer->Begin();
 			GSwapchain.ClearAndTransitionToPresent(CmdBuffer);
 			CmdBuffer->End();
-			GCmdBufferMgr.Submit(GDescriptorPool, CmdBuffer, GDevice.PresentQueue, nullptr, nullptr);
+			GGfxCmdBufferMgr.Submit(CmdBuffer, GDevice.PresentQueue, {}, nullptr);
+			GDescriptorPool.RefreshFences();
 			CmdBuffer->WaitForFence();
 		}
 	}
@@ -1450,11 +1465,12 @@ void DoDeinit()
 	GFillTexturePSO.Destroy(GDevice.Device);
 
 	GRenderTargetPool.Destroy();
-
 	GSwapchain.Destroy();
 	GStagingManager.Destroy();
 	GObjectCache.Destroy();
-	GCmdBufferMgr.Destroy();
+	GGfxCmdBufferMgr.Destroy();
+	GTransferToComputeSemaphore.Destroy(GDevice.Device);
+	GTransferCmdBufferMgr.Destroy();
 	GShaderCollection.Destroy();
 	GMemMgr.Destroy();
 	GDevice.Destroy();

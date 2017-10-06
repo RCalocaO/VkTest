@@ -128,7 +128,10 @@ struct FDevice
 	VkDevice Device = VK_NULL_HANDLE;
 	VkPhysicalDeviceProperties DeviceProperties;
 	uint32 PresentQueueFamilyIndex = UINT32_MAX;
+	uint32 ComputeQueueFamilyIndex = UINT32_MAX;
+	uint32 TransferQueueFamilyIndex = UINT32_MAX;
 	VkQueue PresentQueue = VK_NULL_HANDLE;
+	VkQueue TransferQueue = VK_NULL_HANDLE;
 
 	void Create(std::vector<const char*>& Layers)
 	{
@@ -149,13 +152,19 @@ struct FDevice
 		VkPhysicalDeviceFeatures DeviceFeatures;
 		vkGetPhysicalDeviceFeatures(PhysicalDevice, &DeviceFeatures);
 
-		VkDeviceQueueCreateInfo QueueInfo;
-		MemZero(QueueInfo);
-		QueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		QueueInfo.queueFamilyIndex = PresentQueueFamilyIndex;
-		QueueInfo.queueCount = 1;
+		bool bSeparateTransfer = PresentQueueFamilyIndex != TransferQueueFamilyIndex;
+		VkDeviceQueueCreateInfo QueueInfos[2];
+		MemZero(QueueInfos);
+		QueueInfos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		QueueInfos[0].queueFamilyIndex = PresentQueueFamilyIndex;
+		QueueInfos[0].queueCount = 1;
 		float Priorities[1] = { 1.0f };
-		QueueInfo.pQueuePriorities = Priorities;
+		QueueInfos[0].pQueuePriorities = Priorities;
+
+		QueueInfos[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		QueueInfos[1].queueFamilyIndex = TransferQueueFamilyIndex;
+		QueueInfos[1].queueCount = 1;
+		QueueInfos[1].pQueuePriorities = Priorities;
 
 		const char* DeviceExtensions[] =
 		{
@@ -166,8 +175,8 @@ struct FDevice
 		VkDeviceCreateInfo DeviceInfo;
 		MemZero(DeviceInfo);
 		DeviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		DeviceInfo.queueCreateInfoCount = 1;
-		DeviceInfo.pQueueCreateInfos = &QueueInfo;
+		DeviceInfo.queueCreateInfoCount = bSeparateTransfer ? 2 : 1;
+		DeviceInfo.pQueueCreateInfos = QueueInfos;
 		DeviceInfo.enabledLayerCount = (uint32)Layers.size();
 		DeviceInfo.ppEnabledLayerNames = Layers.size() > 0 ? &Layers[0] : nullptr;
 		DeviceInfo.enabledExtensionCount = sizeof(DeviceExtensions) / sizeof(DeviceExtensions[0]);
@@ -176,6 +185,7 @@ struct FDevice
 		checkVk(vkCreateDevice(PhysicalDevice, &DeviceInfo, nullptr, &Device));
 
 		vkGetDeviceQueue(Device, PresentQueueFamilyIndex, 0, &PresentQueue);
+		vkGetDeviceQueue(Device, TransferQueueFamilyIndex, 0, &TransferQueue);
 	}
 
 	void Destroy()
@@ -610,8 +620,7 @@ struct FCmdBufferMgr
 		return AllocateCmdBuffer();
 	}
 
-	void Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore);
-	void Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore);
+	void Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, std::vector<FSemaphore*>&& WaitSemaphores, FSemaphore* SignaledSemaphore);
 
 	void Update()
 	{

@@ -188,25 +188,40 @@ void FInstance::CreateDevice(FDevice& OutDevice)
 		QueueFamilies.resize(NumQueueFamilies);
 		vkGetPhysicalDeviceQueueFamilyProperties(Devices[Index], &NumQueueFamilies, &QueueFamilies[0]);
 
+		OutDevice.PhysicalDevice = Devices[Index];
+		OutDevice.DeviceProperties = DeviceProperties;
+
 		for (uint32 QueueIndex = 0; QueueIndex < NumQueueFamilies; ++QueueIndex)
 		{
 			VkBool32 bSupportsPresent;
 			checkVk(vkGetPhysicalDeviceSurfaceSupportKHR(Devices[Index], QueueIndex, Surface, &bSupportsPresent));
-			if (bSupportsPresent && QueueFamilies[QueueIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			if (bSupportsPresent && (QueueFamilies[QueueIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT) == VK_QUEUE_GRAPHICS_BIT && OutDevice.PresentQueueFamilyIndex == UINT32_MAX)
 			{
-				OutDevice.PhysicalDevice = Devices[Index];
-				OutDevice.DeviceProperties = DeviceProperties;
 				OutDevice.PresentQueueFamilyIndex = QueueIndex;
-				goto Found;
+			}
+			else if ((QueueFamilies[QueueIndex].queueFlags & VK_QUEUE_COMPUTE_BIT) == VK_QUEUE_COMPUTE_BIT && OutDevice.ComputeQueueFamilyIndex == UINT32_MAX && OutDevice.PresentQueueFamilyIndex != UINT32_MAX)
+			{
+				OutDevice.ComputeQueueFamilyIndex = QueueIndex;
+			}
+			else if ((QueueFamilies[QueueIndex].queueFlags & VK_QUEUE_TRANSFER_BIT) == VK_QUEUE_TRANSFER_BIT && OutDevice.TransferQueueFamilyIndex == UINT32_MAX && OutDevice.PresentQueueFamilyIndex != UINT32_MAX)
+			{
+				OutDevice.TransferQueueFamilyIndex = QueueIndex;
 			}
 		}
 	}
 
-	// Not found!
-	check(0);
-	return;
+	if (OutDevice.PresentQueueFamilyIndex == UINT32_MAX)
+	{
+		// Not found!
+		check(0);
+		return;
+	}
 
-Found:
+	if (OutDevice.TransferQueueFamilyIndex == UINT32_MAX)
+	{
+		OutDevice.TransferQueueFamilyIndex = OutDevice.PresentQueueFamilyIndex;
+	}
+
 	OutDevice.Create(Layers);
 }
 
@@ -811,21 +826,26 @@ void FDescriptorPool::UpdateDescriptors(FWriteDescriptors& InWriteDescriptors)
 }
 
 
-void FCmdBufferMgr::Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
+void FCmdBufferMgr::Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, std::vector<FSemaphore*>&& WaitSemaphores, FSemaphore* SignaledSemaphore)
 {
 	check(CmdBuffer->State == FPrimaryCmdBuffer::EState::Ended);
 	check(CmdBuffer->Secondary.empty());
-	VkPipelineStageFlags StageMask[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkPipelineStageFlags StageMask[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 	VkSubmitInfo Info;
 	MemZero(Info);
 	Info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	Info.pWaitDstStageMask = StageMask;
 	Info.commandBufferCount = 1;
 	Info.pCommandBuffers = &CmdBuffer->CmdBuffer;
-	if (WaitSemaphore)
+	std::vector<VkSemaphore> WaitSemaphoresList;
+	if (!WaitSemaphores.empty())
 	{
-		Info.waitSemaphoreCount = 1;
-		Info.pWaitSemaphores = &WaitSemaphore->Semaphore;
+		check(WaitSemaphores.size() <= 2);
+		StageMask[0] = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		StageMask[1] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		Info.waitSemaphoreCount = (uint32)WaitSemaphores.size();
+		std::for_each(WaitSemaphores.begin(), WaitSemaphores.end(), [&](const FSemaphore* S){ WaitSemaphoresList.push_back(S->Semaphore); });
+		Info.pWaitSemaphores = &WaitSemaphoresList[0];
 	}
 	if (SignaledSemaphore)
 	{
@@ -836,12 +856,6 @@ void FCmdBufferMgr::Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemapho
 	CmdBuffer->Fence->State = FFence::EState::NotSignaled;
 	CmdBuffer->State = FPrimaryCmdBuffer::EState::Submitted;
 	Update();
-}
-
-void FCmdBufferMgr::Submit(FDescriptorPool& DescriptorPool, FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, FSemaphore* WaitSemaphore, FSemaphore* SignaledSemaphore)
-{
-	Submit(CmdBuffer, Queue, WaitSemaphore, SignaledSemaphore);
-	DescriptorPool.RefreshFences();
 }
 
 void FGfxPSO::Destroy(VkDevice Device)

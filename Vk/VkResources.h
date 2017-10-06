@@ -1394,7 +1394,7 @@ struct FOneShotCmdBuffer
 	~FOneShotCmdBuffer()
 	{
 		CmdBuffer->End();
-		CmdBufferMgr->Submit(CmdBuffer, Device->PresentQueue, nullptr, nullptr);
+		CmdBufferMgr->Submit(CmdBuffer, Device->PresentQueue, {}, nullptr);
 		CmdBuffer->WaitForFence();
 	}
 };
