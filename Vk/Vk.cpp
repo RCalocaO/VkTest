@@ -16,6 +16,13 @@ extern bool GRenderDoc;
 extern bool GVkTrace;
 extern bool GValidation;
 
+enum
+{
+	NUM_CUBES_X = 4,
+	NUM_CUBES_Y = 4,
+	NUM_CUBES = NUM_CUBES_X * NUM_CUBES_Y,
+};
+
 // 0 no multithreading
 // 1 inside a render pass
 // 2 run post
@@ -23,7 +30,7 @@ extern bool GValidation;
 
 FControl::FControl()
 	: StepDirection{0, 0, 0}
-	, CameraPos{0, 0, -10, 1}
+	, CameraPos{-16, 0, -50, 1}
 	, ViewMode(EViewMode::Solid)
 	, DoPost(!true)
 	, DoMSAA(false)
@@ -78,6 +85,7 @@ static FQueryMgr GQueryMgr;
 static FVulkanShaderCollection GShaderCollection;
 
 static FMesh GCube;
+static std::vector<FMeshInstance> GCubeInstances;
 static FMesh GModel;
 static FVertexBuffer GFloorVB;
 static FIndexBuffer GFloorIB;
@@ -102,7 +110,7 @@ struct FObjUB
 {
 	FMatrix4x4 Obj;
 };
-static FUniformBuffer<FObjUB> GObjUB;
+//static FUniformBuffer<FObjUB> GObjUB;
 static FUniformBuffer<FObjUB> GIdentityUB;
 
 static FImage2DWithView GCheckerboardTexture;
@@ -945,12 +953,16 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	}
 
 	GViewUB.Create(GDevice.Device, &GMemMgr);
-	GObjUB.Create(GDevice.Device, &GMemMgr);
+	//GObjUB.Create(GDevice.Device, &GMemMgr);
 	GIdentityUB.Create(GDevice.Device, &GMemMgr);
 
+	for (uint32 Index = 0; Index < NUM_CUBES; ++Index)
 	{
-		FObjUB& ObjUB = *GObjUB.GetMappedData();
+		FMeshInstance Instance;
+		Instance.ObjUB.Create(GDevice.Device, &GMemMgr);
+		FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
 		ObjUB.Obj = FMatrix4x4::GetIdentity();
+		GCubeInstances.push_back(Instance);
 	}
 
 	{
@@ -995,6 +1007,7 @@ static void DrawMesh(FCmdBuffer* CmdBuffer, FMesh& Mesh, TSetDescriptors SetDesc
 	}
 }
 
+/*
 static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
 	FObjUB& ObjUB = *GObjUB.GetMappedData();
@@ -1007,23 +1020,61 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 
 	DrawMesh(CmdBuffer, GCube,
 		[&](FImage2DWithView* Image)
+	{
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+
+		FWriteDescriptors WriteDescriptors;
+		WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+		WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+		WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
+		WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+
+		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
+	});
+}
+
+*/
+static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
+{
+	static float AngleDegrees[NUM_CUBES] = {0};
+	for (int32 Index = 0; Index < (int32)GCubeInstances.size(); ++Index)
+	{
+		int32 Y = Index / NUM_CUBES_X;
+		int32 X = Index % NUM_CUBES_X;
+		auto& Instance = GCubeInstances[Index];
+		FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
+		//static float AngleDegrees = 0;
+		{
+			AngleDegrees[Index] += 360.0f / 20.0f / 60.0f + 360.0f / 10.0f / 30.0f / ((float)Index + 1);
+			AngleDegrees[Index] = fmod(AngleDegrees[Index], 360.0f);
+		}
+		ObjUB.Obj = FMatrix4x4::GetRotationY(ToRadians(AngleDegrees[Index]));
+		ObjUB.Obj.Set(3, 0, (X - NUM_CUBES_X / 2.0f) * 3);
+		ObjUB.Obj.Set(3, 1, -Index * 10.0f / NUM_CUBES);
+		ObjUB.Obj.Set(3, 2, (Y - NUM_CUBES_Y / 2.0f) * 3);
+
+		DrawMesh(CmdBuffer, GCube,
+			[&](FImage2DWithView* Image)
 		{
 			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
 
 			FWriteDescriptors WriteDescriptors;
 			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, Instance.ObjUB);
 			WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
 			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 		});
+	}
 }
 
 static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	FObjUB& ObjUB = *GObjUB.GetMappedData();
+	//FObjUB& ObjUB = *GObjUB.GetMappedData();
+	FObjUB& ObjUB = *GIdentityUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
 
 	DrawMesh(CmdBuffer, GModel,
@@ -1033,7 +1084,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 			FWriteDescriptors WriteDescriptors;
 			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
 			WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
 			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
@@ -1109,7 +1160,8 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 	if (GModelName.empty())
 	{
 		DrawFloor(GfxPipeline, Device, CmdBuffer);
-		DrawCube(GfxPipeline, Device, CmdBuffer);
+		//DrawCube(GfxPipeline, Device, CmdBuffer);
+		DrawCubes(GfxPipeline, Device, CmdBuffer);
 	}
 	else
 	{
@@ -1368,7 +1420,11 @@ void DoDeinit()
 	GFloorVB.Destroy();
 	GViewUB.Destroy();
 	GCreateFloorUB.Destroy();
-	GObjUB.Destroy();
+	for (auto& Instance : GCubeInstances)
+	{
+		Instance.ObjUB.Destroy();
+		//GObjUB.Destroy();
+	}
 	GCube.Destroy();
 	GModel.Destroy();
 	GIdentityUB.Destroy();

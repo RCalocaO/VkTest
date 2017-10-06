@@ -84,4 +84,16 @@ struct FMesh
 	FTinyObj* Loaded = nullptr;
 };
 
+
+struct FMeshInstance
+{
+	FMesh* Mesh = nullptr;
+
+	struct FObjUB
+	{
+		FMatrix4x4 Obj;
+	};
+	FUniformBuffer<FObjUB> ObjUB;
+};
+
 void LoadTexturesForMesh(FDevice* Device, FMemManager* MemMgr, FMesh& Mesh, const std::string& BaseDir);

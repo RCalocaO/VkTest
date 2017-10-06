@@ -684,10 +684,10 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 {
 	check(State == EState::Begun);
 
-	static uint32 N = 0;
-	N = (N + 1) % 256;
+	//static uint32 N = 0;
+	//N = (N + 1) % 256;
 
-	VkClearValue ClearValues[2] = { { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
+	VkClearValue ClearValues[2] = {0};// { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
 	ClearValues[1].depthStencil.depth = 1.0f;
 	ClearValues[1].depthStencil.stencil = 0;
 	VkRenderPassBeginInfo BeginInfo = {};
