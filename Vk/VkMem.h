@@ -14,18 +14,21 @@ struct FRange
 
 enum
 {
-	DEFAULT_PAGE_SIZE = 16 * 1024 * 1024
+	DEFAULT_PAGE_SIZE = 16 * 1024,
 };
 
 class FMemAllocation
 {
 public:
-	FMemAllocation(VkDevice InDevice, VkDeviceSize InSize, uint32 InMemTypeIndex, bool bInMapped)
+	FMemAllocation(VkDevice InDevice, VkDeviceSize InSize, uint32 InMemTypeIndex, VkMemoryPropertyFlags InMemPropertyFlags, bool bInMapped)
 		: Device(InDevice)
 		, Size(InSize)
 		, MemTypeIndex(InMemTypeIndex)
 		, bMapped(bInMapped)
 	{
+		bCoherent = (InMemPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		bCached = (InMemPropertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) == VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+
 		VkMemoryAllocateInfo Info;
 		MemZero(Info);
 		Info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -51,6 +54,16 @@ public:
 		return MappedMemory;
 	}
 
+	bool IsCoherent() const
+	{
+		return bCoherent;
+	}
+
+	bool IsCached() const
+	{
+		return bCached;
+	}
+
 	VkDeviceMemory Mem = VK_NULL_HANDLE;
 
 protected:
@@ -58,6 +71,8 @@ protected:
 	uint64 Size;
 	uint32 MemTypeIndex;
 	bool bMapped;
+	bool bCoherent;
+	bool bCached;
 	void* MappedMemory = nullptr;
 	friend struct FMemManager;
 };
@@ -65,7 +80,7 @@ protected:
 class FMemPage
 {
 public:
-	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, bool bInMapped);
+	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, VkMemoryPropertyFlags InMemPropertyFlags, bool bInMapped);
 
 	FMemSubAlloc* TryAlloc(uint64 Size, uint64 Alignment);
 
@@ -79,6 +94,11 @@ public:
 	void* GetMappedMemory()
 	{
 		return Allocation.GetMappedMemory();
+	}
+
+	bool IsCoherent() const
+	{
+		return Allocation.IsCoherent();
 	}
 
 protected:
@@ -124,6 +144,11 @@ public:
 	void Release()
 	{
 		Owner->Release(this);
+	}
+
+	bool IsCoherent() const
+	{
+		return Owner->IsCoherent();
 	}
 
 protected:
@@ -178,9 +203,9 @@ struct FMemManager
 		return (uint32)-1;
 	}
 
-	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags MemPropertyFlags, bool bImage)
+	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags InMemPropertyFlags, bool bImage, bool bInMapped)
 	{
-		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, MemPropertyFlags);
+		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, InMemPropertyFlags);
 		auto& Pages = (bImage ? ImagePages : BufferPages)[MemTypeIndex];
 #if 0
 		for (auto& Page : Pages)
@@ -193,8 +218,7 @@ struct FMemManager
 		}
 #endif
 		const uint64 PageSize = max(DEFAULT_PAGE_SIZE, Reqs.size);
-		const bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, bMapped);
+		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, InMemPropertyFlags, bInMapped);
 		Pages.push_back(NewPage);
 		auto* SubAlloc = NewPage->TryAlloc(Reqs.size, Reqs.alignment);
 		check(SubAlloc);

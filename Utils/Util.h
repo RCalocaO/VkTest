@@ -598,3 +598,26 @@ namespace FileUtils
 		return bResult;
 	}
 }
+
+
+inline FVector3 GetGradient(float t)
+{
+	FVector3 R;
+	if (t < 0.25)
+	{
+		R = FVector3(0.0f, 4.0f * t, 1.0f);
+	}
+	else if (t < 0.5)
+	{
+		R = FVector3(0.0f, 1.0f, 1.0f + 4.0f * (0.25f - t));
+	}
+	else if (t < 0.75)
+	{
+		R = FVector3(4.0f * (t - 0.5f), 1.0f, 0.0f);
+	}
+	else
+	{
+		R = FVector3(1.0f, 1.0f + 4.0f * (0.75f - t), 0.0f);
+	}
+	return R;
+}

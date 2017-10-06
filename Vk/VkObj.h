@@ -83,8 +83,9 @@ struct FMeshInstance
 	struct FObjUB
 	{
 		FMatrix4x4 Obj;
+		FVector4 Tint;
 	};
-	FUniformBuffer<FObjUB> ObjUB;
+	FGPUUniformBuffer<FObjUB> ObjUB;
 };
 
 void LoadTexturesForMesh(FDevice* Device, FMemManager* MemMgr, FMesh& Mesh, const std::string& BaseDir);

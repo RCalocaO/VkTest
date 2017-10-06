@@ -26,7 +26,9 @@ struct FBuffer
 
 		vkGetBufferMemoryRequirements(Device, Buffer, &Reqs);
 
-		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, false);
+		bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, false, bMapped);
 
 		vkBindBufferMemory(Device, Buffer, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
@@ -122,7 +124,6 @@ struct FUniformBuffer
 	void Create(VkDevice InDevice, FMemManager* MemMgr)
 	{
 		UploadBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, MemMgr);
-		//GPUBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr);
 	}
 
 	TStruct* GetMappedData()
@@ -132,12 +133,26 @@ struct FUniformBuffer
 
 	void Destroy()
 	{
-		//GPUBuffer.Destroy();
 		UploadBuffer.Destroy();
 	}
 
 	FBuffer UploadBuffer;
-	//FBuffer GPUBuffer;
+};
+
+template <typename TStruct>
+struct FGPUUniformBuffer
+{
+	void Create(VkDevice InDevice, FMemManager* MemMgr)
+	{
+		GPUBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr);
+	}
+
+	void Destroy()
+	{
+		GPUBuffer.Destroy();
+	}
+
+	FBuffer GPUBuffer;
 };
 
 struct FImage
@@ -172,7 +187,7 @@ struct FImage
 
 		vkGetImageMemoryRequirements(Device, Image, &Reqs);
 
-		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, true);
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, true, false);
 
 		vkBindImageMemory(Device, Image, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
@@ -281,7 +296,7 @@ struct FStagingManager
 		}
 	}
 
-	FStagingBuffer* RequestUploadBuffer(uint32 Size)
+	FStagingBuffer* RequestUploadBuffer(uint64 Size)
 	{
 /*
 		for (auto& Entry : Entries)
@@ -1084,6 +1099,12 @@ public:
 		AddUniformBuffer(DescSet, Binding, Buffer.UploadBuffer);
 	}
 
+	template< typename TStruct>
+	inline void AddUniformBuffer(FDescriptorSet* DescSet, uint32 Binding, const FGPUUniformBuffer<TStruct>& Buffer)
+	{
+		AddUniformBuffer(DescSet, Binding, Buffer.GPUBuffer);
+	}
+
 	inline void AddStorageBuffer(FDescriptorSet* DescSet, uint32 Binding, const FBuffer& Buffer)
 	{
 		check(!bClosed);
@@ -1348,13 +1369,16 @@ struct FSwapchain
 
 inline void FlushMappedBuffer(VkDevice Device, FBuffer* Buffer)
 {
-	VkMappedMemoryRange Range;
-	MemZero(Range);
-	Range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-	Range.offset = Buffer->GetBindOffset();
-	Range.memory = Buffer->SubAlloc->GetHandle();
-	Range.size = Buffer->GetSize();
-	vkInvalidateMappedMemoryRanges(Device, 1, &Range);
+	if (!Buffer->SubAlloc->IsCoherent())
+	{
+		VkMappedMemoryRange Range;
+		MemZero(Range);
+		Range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+		Range.offset = Buffer->GetBindOffset();
+		Range.memory = Buffer->SubAlloc->GetHandle();
+		Range.size = Buffer->GetSize();
+		vkInvalidateMappedMemoryRanges(Device, 1, &Range);
+	}
 }
 
 inline void CopyBuffer(FPrimaryCmdBuffer* CmdBuffer, FBuffer* SrcBuffer, FBuffer* DestBuffer)

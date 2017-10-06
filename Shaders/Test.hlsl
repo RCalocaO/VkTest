@@ -7,6 +7,7 @@ cbuffer ViewUB : register(b0)
 cbuffer ObjUB : register(b1)
 {
 	float4x4 ObjMtx;
+	float4 Tint;
 };
 
 struct FVSIn
@@ -31,7 +32,7 @@ FVSOut MainVS(FVSIn In)
 
 	Out.UVs = In.UVs;
 
-	Out.Color = In.Color;
+	Out.Color = In.Color * Tint;
 
 	Out.Pos = mul(ProjectionMtx, Position);
 	return Out;
@@ -42,5 +43,5 @@ Texture2D Tex : register(t3);
 
 float4 MainPS(FVSOut In)
 {
-	return Tex.Sample(SS, In.UVs);// * ColorIn;
+	return Tex.Sample(SS, In.UVs) * In.Color;
 }

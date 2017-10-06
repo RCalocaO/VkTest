@@ -48,7 +48,7 @@ void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 		OutVertices[QuadIndex].x = X;
 		OutVertices[QuadIndex].y = Y;
 		OutVertices[QuadIndex].z = Z;
-		OutVertices[QuadIndex].Color = QuadIndexX * 65536 + QuadIndexZ;
+		OutVertices[QuadIndex].Color = -1;//QuadIndexX * 65536 + QuadIndexZ;
 		OutVertices[QuadIndex].u = U;
 		OutVertices[QuadIndex].v = V;
 		if (QuadIndexX != 0 && QuadIndexZ != 0)

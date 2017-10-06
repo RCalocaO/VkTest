@@ -628,8 +628,8 @@ void FGfxPipeline::Create(VkDevice Device, const FGfxPSO* PSO, const FVertexForm
 	checkVk(vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline));
 }
 
-FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, bool bInMapped)
-	: Allocation(InDevice, Size, MemTypeIndex, bInMapped)
+FMemPage::FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, VkMemoryPropertyFlags InMemPropertyFlags, bool bInMapped)
+	: Allocation(InDevice, Size, MemTypeIndex, InMemPropertyFlags, bInMapped)
 	, MemTypeIndex(InMemTypeIndex)
 {
 	FRange Block;
@@ -699,10 +699,7 @@ void FCmdBuffer::BeginRenderPass(VkRenderPass RenderPass, const FFramebuffer& Fr
 {
 	check(State == EState::Begun);
 
-	//static uint32 N = 0;
-	//N = (N + 1) % 256;
-
-	VkClearValue ClearValues[2] = {0};// { N / 255.0f, 1.0f, 0.0f, 1.0f },{ 1.0, 0.0 } };
+	VkClearValue ClearValues[2] = { { 0.0f, 0.0f, 0.5f, 1.0f },{ 1.0, 0.0 } };
 	ClearValues[1].depthStencil.depth = 1.0f;
 	ClearValues[1].depthStencil.stencil = 0;
 	VkRenderPassBeginInfo BeginInfo = {};

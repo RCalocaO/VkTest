@@ -113,6 +113,7 @@ static FUniformBuffer<FViewUB> GViewUB;
 struct FObjUB
 {
 	FMatrix4x4 Obj;
+	FVector4 Tint = FVector4(1, 1, 1, 1);
 };
 //static FUniformBuffer<FObjUB> GObjUB;
 static FUniformBuffer<FObjUB> GIdentityUB;
@@ -761,24 +762,7 @@ void CreateAndFillTexture()
 
 					float t = 1.0f - ((float)InnerWidth / (float)Width) * ((float)Height / (float)OriginalHeight);
 
-					FVector3 R;
-					if (t < 0.25)
-					{
-						R = FVector3(0.0f, 4.0f * t, 1.0f);
-					}
-					else if (t < 0.5)
-					{
-						R = FVector3(0.0f, 1.0f, 1.0f + 4.0f * (0.25f - t));
-					}
-					else if (t < 0.75)
-					{
-						R = FVector3(4.0f * (t - 0.5f), 1.0f, 0.0f);
-					}
-					else
-					{
-						R = FVector3(1.0f, 1.0f + 4.0f * (0.75f - t), 0.0f);
-					}
-
+					FVector3 R = GetGradient(t);
 					*Out++ = ToRGB8Color(R, 255);
 				}
 			}
@@ -969,14 +953,15 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	{
 		FMeshInstance Instance;
 		Instance.ObjUB.Create(GDevice.Device, &GMemMgr);
-		FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
-		ObjUB.Obj = FMatrix4x4::GetIdentity();
+		//FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
+		//ObjUB.Obj = FMatrix4x4::GetIdentity();
 		GCubeInstances.push_back(Instance);
 	}
 
 	{
 		FObjUB& ObjUB = *GIdentityUB.GetMappedData();
 		ObjUB.Obj = FMatrix4x4::GetIdentity();
+		ObjUB.Tint = FVector4(1, 1, 1, 1);
 	}
 
 	GRenderTargetPool.Create(GDevice.Device, &GMemMgr);
@@ -1048,13 +1033,16 @@ static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cmd
 static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* GfxCmdBuffer, FCmdBuffer* TransferCmdBuffer)
 {
 	static float AngleDegrees[NUM_CUBES] = {0};
+
 	for (int32 Index = 0; Index < (int32)GCubeInstances.size(); ++Index)
 	{
 		int32 Y = Index / NUM_CUBES_X;
 		int32 X = Index % NUM_CUBES_X;
 		auto& Instance = GCubeInstances[Index];
-		FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
-		//static float AngleDegrees = 0;
+
+		auto* UploadBuffer = GStagingManager.RequestUploadBuffer(Instance.ObjUB.GPUBuffer.GetSize());
+		FMeshInstance::FObjUB& ObjUB = *(FMeshInstance::FObjUB*)UploadBuffer->GetMappedData();
+		//FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
 		{
 			AngleDegrees[Index] += 360.0f / 20.0f / 60.0f + 360.0f / 10.0f / 30.0f / ((float)Index + 1);
 			AngleDegrees[Index] = fmod(AngleDegrees[Index], 360.0f);
@@ -1063,6 +1051,12 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 		ObjUB.Obj.Set(3, 0, (X - NUM_CUBES_X / 2.0f) * 3);
 		ObjUB.Obj.Set(3, 1, -Index * 10.0f / NUM_CUBES);
 		ObjUB.Obj.Set(3, 2, (Y - NUM_CUBES_Y / 2.0f) * 3);
+		ObjUB.Tint = FVector4(GetGradient((float)Index / NUM_CUBES), 1);
+
+		VkBufferCopy Region;
+		MemZero(Region);
+		Region.size = UploadBuffer->GetSize();
+		vkCmdCopyBuffer(TransferCmdBuffer->CmdBuffer, UploadBuffer->Buffer, Instance.ObjUB.GPUBuffer.Buffer, 1, &Region);
 
 		DrawMesh(GfxCmdBuffer, GCube,
 			[&](FImage2DWithView* Image)
@@ -1086,6 +1080,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	//FObjUB& ObjUB = *GObjUB.GetMappedData();
 	FObjUB& ObjUB = *GIdentityUB.GetMappedData();
 	ObjUB.Obj = FMatrix4x4::GetIdentity();
+	ObjUB.Tint = FVector4(1, 1, 1, 1);
 
 	DrawMesh(CmdBuffer, GModel,
 		[&](FImage2DWithView* Image)
