@@ -141,12 +141,28 @@ struct FDevice
 		DeviceLayers.resize(NumLayers);
 		vkEnumerateDeviceLayerProperties(PhysicalDevice, &NumLayers, &DeviceLayers[0]);
 
+		for (auto& DeviceLayer : DeviceLayers)
+		{
+			std::string s = "Found Device Layer: ";
+			s += DeviceLayer.layerName;
+			s += "\n";
+			::OutputDebugStringA(s.c_str());
+		}
+
 		{
 			uint32 NumExtensions;
 			vkEnumerateDeviceExtensionProperties(PhysicalDevice, nullptr, &NumExtensions, nullptr);
 			std::vector<VkExtensionProperties> DeviceExtensions;
 			DeviceExtensions.resize(NumExtensions);
 			vkEnumerateDeviceExtensionProperties(PhysicalDevice, nullptr, &NumExtensions, &DeviceExtensions[0]);
+
+			for (auto& Extension : DeviceExtensions)
+			{
+				std::string s = "Found Device Extension: ";
+				s += Extension.extensionName;
+				s += "\n";
+				::OutputDebugStringA(s.c_str());
+			}
 		}
 
 		VkPhysicalDeviceFeatures DeviceFeatures;

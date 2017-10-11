@@ -1,10 +1,11 @@
 
-RWTexture2D<float4> InImage;
-RWTexture2D<float4> RWImage;
+RWTexture2D<float4> InImage : register(u0);
+RWTexture2D<float4> RWImage : register(u1);
 
 [numthreads(8,8,1)]
 void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 {
+	/*
 	if (
 	//((gl_GlobalInvocationID.x % 4) == 0) ||
 	((GlobalInvocationID.y % 4) != 0)
@@ -23,4 +24,6 @@ void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 		float4 Color = 0;
 		RWImage[int2(GlobalInvocationID.xy)] = Color;
 	}
+*/
+	RWImage[int2(GlobalInvocationID.xy)] = InImage[int2(GlobalInvocationID.xy)];
 }

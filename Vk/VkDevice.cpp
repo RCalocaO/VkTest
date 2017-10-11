@@ -25,7 +25,7 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 
 		for (auto& Property : InstanceProperties)
 		{
-			std::string s = "Found Layer: ";
+			std::string s = "Found Instance Layer: ";
 			s += Property.layerName;
 			s += "\n";
 			::OutputDebugStringA(s.c_str());
@@ -94,6 +94,14 @@ void FInstance::GetInstanceLayersAndExtensions(std::vector<const char*>& OutLaye
 		ExtensionsProperties.resize(NumExtensions);
 
 		checkVk(vkEnumerateInstanceExtensionProperties(nullptr, &NumExtensions, &ExtensionsProperties[0]));
+
+		for (auto& Extension : ExtensionsProperties)
+		{
+			std::string s = "Found Instance Extension: ";
+			s += Extension.extensionName;
+			s += "\n";
+			::OutputDebugStringA(s.c_str());
+		}
 
 		const char* UseExtensions[] =
 		{
