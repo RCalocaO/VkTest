@@ -128,5 +128,6 @@
     <None Include="..\Shaders\BuildShaders.bat">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Script.ini" />
   </ItemGroup>
 </Project>

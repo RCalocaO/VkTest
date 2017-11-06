@@ -5,6 +5,10 @@
 #include <map>
 #include <set>
 #include <algorithm>
+#include <iostream>
+#include <iomanip>
+#include <string>
+#include <fstream>
 
 typedef uint8_t uint8;
 typedef uint16_t uint16;
@@ -43,6 +47,28 @@ inline std::vector<char> LoadFile(const char* Filename)
 	return Data;
 }
 
+inline void TrimWhiteSpace(std::string& S)
+{
+	char* P = &S[0];
+	while (*P == ' ')
+	{
+		++P;
+	}
+	S = S.substr(P - &S[0]);
+
+	if (!S.empty())
+	{
+		size_t Index = S.length() - 1;
+		while (Index >= 0 && S[Index] == ' ')
+		{
+			--Index;
+		}
+
+		S = S.substr(0, Index + 1);
+	}
+}
+
+
 inline bool IsPowerOfTwo(uint64 N)
 {
 	return (N != 0) && !(N & (N - 1));
@@ -64,6 +90,22 @@ inline float ToDegrees(float Rad)
 {
 	return Rad * (180.0f / 3.14159265f);
 }
+
+inline std::vector<std::string> LoadFileIntoLines(const char* Filename)
+{
+	std::vector<std::string> Data;
+
+	std::ifstream File;
+	File.open(Filename);
+	std::string Line;
+	while (std::getline(File, Line))
+	{
+		Data.push_back(Line);
+	}
+
+	return Data;
+}
+
 
 struct FVector2
 {
@@ -621,3 +663,101 @@ inline FVector3 GetGradient(float t)
 	}
 	return R;
 }
+
+
+struct FIni
+{
+	FIni()
+	{
+		// Empty section
+		Sections.push_back(FSection());
+	}
+
+	int FindSection(const std::string& Name)
+	{
+		for (size_t Index = 0; Index < Sections.size(); ++Index)
+		{
+			if (Sections[Index].Name == Name)
+			{
+				return (int)Index;
+			}
+		}
+		return -1;
+	}
+
+	int FindorAddSection(const std::string& Name)
+	{
+		int Found = FindSection(Name);
+		if (Found == -1)
+		{
+			FSection NewSection;
+			NewSection.Name = Name;
+			Sections.push_back(NewSection);
+			Found = (int)Sections.size() - 1;
+		}
+
+		return Found;
+	}
+
+	void Load(const char* Filename)
+	{
+		auto Lines = LoadFileIntoLines(Filename);
+		size_t SectionIndex = 0;
+		for (auto& Line : Lines)
+		{
+			if (Line.empty())
+			{
+				continue;
+			}
+
+			if (Line[0] == '[' && Line.back() == ']')
+			{
+				auto SectionName = Line.substr(1, Line.length() - 2);
+				SectionIndex = FindorAddSection(SectionName);
+			}
+			else
+			{
+				auto FoundEquals = Line.find('=');
+				std::string Key;
+				std::string Value;
+				if (FoundEquals == std::string::npos)
+				{
+					Key = Line;
+				}
+				else
+				{
+					Key = Line.substr(0, FoundEquals);
+					Value = Line.substr(FoundEquals + 1);
+				}
+				TrimWhiteSpace(Key);
+				TrimWhiteSpace(Value);
+				Sections[SectionIndex].Pairs[Key] = Value;
+			}
+		}
+	}
+
+	bool TryFloat(int Section, const char* Key, float& OutValue)
+	{
+		if (Section == -1 || !Key || !*Key)
+		{
+			return false;
+		}
+
+		auto& Pairs = Sections[Section].Pairs;
+		auto Found = Pairs.find(Key);
+		if (Found == Pairs.end())
+		{
+			return false;
+		}
+
+		OutValue = (float)atof(Found->second.c_str());
+		return true;
+	}
+
+	struct FSection
+	{
+		std::string Name;
+		std::map<std::string, std::string> Pairs;
+	};
+	std::vector<FSection> Sections;
+};

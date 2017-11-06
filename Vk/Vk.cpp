@@ -11,6 +11,7 @@
 #include "../Utils/glm/glm/mat4x4.hpp"
 #include "../Utils/glm/glm/gtc/matrix_transform.hpp"
 
+static FIni GIni;
 extern std::string GModelName;
 extern bool GRenderDoc;
 extern bool GVkTrace;
@@ -44,8 +45,8 @@ const float PI = 3.14159265358979323846f;
 struct FCamera
 {
 	FVector3 Pos;
-	float YRotation = 0;
 	float XRotation = 0;
+	float YRotation = 0;
 	float FOV = 45;
 
 	FCamera()
@@ -53,6 +54,22 @@ struct FCamera
 		Pos.Set(0, 0, -10);
 	}
 	
+	void SetupFromIni(FIni& Ini)
+	{
+		int FoundSection = Ini.FindSection("Camera");
+		if (FoundSection == -1)
+		{
+			return;
+		}
+
+		Ini.TryFloat(FoundSection, "PosX", Pos.x);
+		Ini.TryFloat(FoundSection, "PosY", Pos.y);
+		Ini.TryFloat(FoundSection, "PosZ", Pos.z);
+		Ini.TryFloat(FoundSection, "RotX", XRotation);
+		Ini.TryFloat(FoundSection, "RotY", YRotation);
+		Ini.TryFloat(FoundSection, "FOV", FOV);
+	}
+
 	FMatrix4x4 GetViewMatrix()
 	{
 		glm::mat4 View;
@@ -910,6 +927,30 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 				}
 			}
 		}
+		else if (!_strnicmp(Token, "-ini=", 5))
+		{
+			std::string IniName = "";
+			auto* Ini = Token + 5;
+			if (*Ini == '"')
+			{
+				++Ini;
+				auto* End = strchr(Ini, '"');
+				check(End);
+				IniName = Ini;
+				IniName = IniName.substr(0, End - Ini);
+			}
+			else
+			{
+				auto* End = strchr(Ini, ' ');
+				IniName = Ini;
+				if (End)
+				{
+					IniName = IniName.substr(0, End - Ini);
+				}
+			}
+
+			GIni.Load(IniName.c_str());
+		}
 		else if (!_strcmpi(Token, "-renderdoc"))
 		{
 			GRenderDoc = true;
@@ -919,6 +960,8 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 			GVkTrace = true;
 		}
 	}
+
+	GCamera.SetupFromIni(GIni);
 
 	GInstance.Create(hInstance, hWnd);
 	GInstance.CreateDevice(GDevice);
