@@ -1128,13 +1128,16 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	DrawMesh(CmdBuffer, GModel,
 		[&](FImage2DWithView* Image)
 		{
-			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GUnlitPSO.DSLayout);
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
 
 			FWriteDescriptors WriteDescriptors;
-			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
-			WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ViewUB", GViewUB);
+			//WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
+			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ObjUB", GIdentityUB);
+			//WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
+			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
+			//WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
+			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "Tex", GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
@@ -1145,7 +1148,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GUnlitPSO.DSLayout);
+	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
 
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);

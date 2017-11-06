@@ -577,8 +577,10 @@ FGfxPipeline::FGfxPipeline()
 	DynamicInfo.pDynamicStates = Dynamic;
 }
 
-void FGfxPipeline::Create(VkDevice Device, const FGfxPSO* PSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass)
+void FGfxPipeline::Create(VkDevice Device, const FGfxPSO* InPSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass)
 {
+	PSO = InPSO;
+
 	std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 	PSO->SetupShaderStages(ShaderStages);
 

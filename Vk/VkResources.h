@@ -8,6 +8,7 @@
 
 class FWriteDescriptors;
 struct FVulkanShaderCollection;
+class FDescriptorSet;
 
 struct FBuffer
 {
@@ -613,6 +614,19 @@ struct FPSO
 		Info.bindingCount = (uint32)DSBindings.size();
 		Info.pBindings = DSBindings.empty() ? nullptr : &DSBindings[0];
 		checkVk(vkCreateDescriptorSetLayout(Device, &Info, nullptr, &DSLayout));
+
+		for (auto& Sets : DescriptorSetInfo)
+		{
+			for (auto& Binding : Sets.second.Bindings)
+			{
+				auto& Entry = ReflectionInfo[Binding.second.Name];
+				FPSO::FReflection Reflection;
+				Reflection.DescriptorSetIndex = Sets.first;
+				Reflection.BindingIndex = Binding.second.BindingIndex;
+				Reflection.Type = Binding.second.Type;
+				Entry.push_back(Reflection);
+			}
+		}
 	}
 
 	VkDescriptorSetLayout DSLayout = VK_NULL_HANDLE;
@@ -624,6 +638,14 @@ struct FPSO
 	void CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& Bindings);
 
 	std::map<uint32, FDescriptorSetInfo> DescriptorSetInfo;
+
+	struct FReflection
+	{
+		uint32 DescriptorSetIndex;
+		uint32 BindingIndex;
+		FDescriptorSetInfo::FBindingInfo::EType Type;
+	};
+	std::map<std::string, std::vector<FReflection>> ReflectionInfo;
 };
 
 struct FGfxPSO : public FPSO
@@ -757,6 +779,7 @@ struct FBasePipeline
 {
 	VkPipeline Pipeline = VK_NULL_HANDLE;
 	VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
+	const FPSO* PSO = nullptr;
 
 	void Destroy(VkDevice Device)
 	{
@@ -766,6 +789,11 @@ struct FBasePipeline
 		vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
 		PipelineLayout = VK_NULL_HANDLE;
 	}
+
+	template <typename TStruct>
+	bool SetUniformBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FUniformBuffer<TStruct>& UB);
+	bool SetSampler(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler);
+	bool SetImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler, const FImageView& ImageView, VkImageLayout Layout);
 };
 
 class FDescriptorSet
@@ -1025,7 +1053,7 @@ struct FGfxPipeline : public FBasePipeline
 	VkPipelineDynamicStateCreateInfo DynamicInfo;
 
 	FGfxPipeline();
-	void Create(VkDevice Device, const FGfxPSO* PSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass);	
+	void Create(VkDevice Device, const FGfxPSO* InPSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass);	
 };
 
 struct FComputePipeline : public FBasePipeline
@@ -1679,3 +1707,53 @@ struct FVulkanShaderCollection : FShaderCollection
 		return nullptr;
 	}
 };
+
+
+template <typename TStruct>
+inline bool FBasePipeline::SetUniformBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FUniformBuffer<TStruct>& UB)
+{
+	auto Found = PSO->ReflectionInfo.find(Name);
+	if (Found != PSO->ReflectionInfo.end())
+	{
+		for (const FPSO::FReflection& Reflection : Found->second)
+		{
+			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer);
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, Reflection.BindingIndex, UB);
+		}
+
+		return true;
+	}
+	return false;
+}
+
+inline bool FBasePipeline::SetSampler(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler)
+{
+	auto Found = PSO->ReflectionInfo.find(Name);
+	if (Found != PSO->ReflectionInfo.end())
+	{
+		for (const FPSO::FReflection& Reflection : Found->second)
+		{
+			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::Sampler);
+			WriteDescriptors.AddSampler(DescriptorSet, Reflection.BindingIndex, Sampler);
+		}
+
+		return true;
+	}
+	return false;
+}
+
+inline bool FBasePipeline::SetImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler, const FImageView& ImageView, VkImageLayout Layout)
+{
+	auto Found = PSO->ReflectionInfo.find(Name);
+	if (Found != PSO->ReflectionInfo.end())
+	{
+		for (const FPSO::FReflection& Reflection : Found->second)
+		{
+			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::SampledImage);
+			WriteDescriptors.AddImage(DescriptorSet, Reflection.BindingIndex, Sampler, ImageView, Layout);
+		}
+
+		return true;
+	}
+	return false;
+}
