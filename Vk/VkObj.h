@@ -69,9 +69,20 @@ struct FMesh
 
 	void Destroy()
 	{
-		check(0);
-		//ObjIB.Destroy();
-		//ObjVB.Destroy();
+		for (auto& Batch : Batches)
+		{
+			Batch->ObjIB.Destroy();
+			Batch->ObjVB.Destroy();
+			delete Batch;
+		}
+		Batches.clear();
+
+		for (auto Pair : Textures)
+		{
+			Pair.second->Destroy();
+			delete Pair.second;
+		}
+		Textures.clear();
 	}
 };
 
