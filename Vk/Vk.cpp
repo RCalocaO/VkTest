@@ -12,7 +12,7 @@
 #include "../Utils/External/glm/glm/gtc/matrix_transform.hpp"
 
 static FIni GIni;
-extern std::string GModelName;
+static std::string GModelName;
 extern bool GRenderDoc;
 extern bool GVkTrace;
 extern bool GValidation;
@@ -355,9 +355,9 @@ FVertexFormat GPosColorUVFormat;
 
 bool GQuitting = false;
 
-struct FTestPSO : public FGfxPSO
+struct FUnlitPSO : public FGfxPSO
 {
-	FTestPSO()
+	FUnlitPSO()
 		: FGfxPSO(GShaderCollection)
 	{
 	}
@@ -370,7 +370,7 @@ struct FTestPSO : public FGfxPSO
 		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
-FTestPSO GTestPSO;
+FUnlitPSO GUnlitPSO;
 
 struct FGenerateMipsPSO : public FGfxPSO
 {
@@ -605,8 +605,8 @@ static bool LoadShadersAndGeometry()
 {
 	FShaderHandle TestComputeCS = GShaderCollection.Register("../Shaders/TestComputeCS.hlsl", EShaderStage::Compute, "Main");
 	FShaderHandle PassThroughVS = GShaderCollection.Register("../Shaders/PassThroughVS.hlsl", EShaderStage::Vertex, "MainVS");
-	FShaderHandle TestVS = GShaderCollection.Register("../Shaders/Test.hlsl", EShaderStage::Vertex, "MainVS");
-	FShaderHandle TestPS = GShaderCollection.Register("../Shaders/Test.hlsl", EShaderStage::Pixel, "MainPS");
+	FShaderHandle UnlitVS = GShaderCollection.Register("../Shaders/Unlit.hlsl", EShaderStage::Vertex, "MainVS");
+	FShaderHandle UnlitPS = GShaderCollection.Register("../Shaders/Unlit.hlsl", EShaderStage::Pixel, "MainPS");
 	FShaderHandle CreateFloorCS = GShaderCollection.Register("../Shaders/CreateFloorCS.hlsl", EShaderStage::Compute, "Main");
 	FShaderHandle TestPostCS = GShaderCollection.Register("../Shaders/TestPostCS.hlsl", EShaderStage::Compute, "Main");
 	FShaderHandle FillTextureCS = GShaderCollection.Register("../Shaders/FillTextureCS.hlsl", EShaderStage::Compute, "Main");
@@ -615,8 +615,8 @@ static bool LoadShadersAndGeometry()
 	GShaderCollection.ReloadShaders();
 
 	check(GSetupFloorPSO.Create(GDevice.Device, CreateFloorCS));
-	check(GTestPSO.CreateVSPS(GDevice.Device, TestVS, TestPS));
 	check(GGenerateMipsPSO.CreateVSPS(GDevice.Device, PassThroughVS, GenerateMipsPS));
+	check(GUnlitPSO.CreateVSPS(GDevice.Device, UnlitVS, UnlitPS));
 	check(GTestComputePostPSO.Create(GDevice.Device, TestPostCS));
 	check(GFillTexturePSO.Create(GDevice.Device, FillTextureCS));
 	check(GTestComputePSO.Create(GDevice.Device, TestComputeCS));
@@ -1104,7 +1104,7 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 		DrawMesh(GfxCmdBuffer, GCube,
 			[&](FImage2DWithView* Image)
 		{
-			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GUnlitPSO.DSLayout);
 
 			FWriteDescriptors WriteDescriptors;
 			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
@@ -1128,7 +1128,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	DrawMesh(CmdBuffer, GModel,
 		[&](FImage2DWithView* Image)
 		{
-			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GUnlitPSO.DSLayout);
 
 			FWriteDescriptors WriteDescriptors;
 			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
@@ -1145,7 +1145,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
+	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GUnlitPSO.DSLayout);
 
 	FWriteDescriptors WriteDescriptors;
 	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
@@ -1200,7 +1200,7 @@ static void UpdateCamera()
 
 static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBuffer* GfxCmdBuffer, FCmdBuffer* TransferCmdBuffer, uint32 Width, uint32 Height)
 {
-	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GTestPSO, &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
+	auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GUnlitPSO, &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
 	vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 	SetDynamicStates(GfxCmdBuffer->CmdBuffer, Width, Height);
@@ -1497,7 +1497,7 @@ void DoDeinit()
 
 	GTestComputePostPSO.Destroy(GDevice.Device);
 	GTestComputePSO.Destroy(GDevice.Device);
-	GTestPSO.Destroy(GDevice.Device);
+	GUnlitPSO.Destroy(GDevice.Device);
 	GGenerateMipsPSO.Destroy(GDevice.Device);
 	GSetupFloorPSO.Destroy(GDevice.Device);
 	GFillTexturePSO.Destroy(GDevice.Device);

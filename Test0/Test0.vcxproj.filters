@@ -13,9 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Shaders">
-      <UniqueIdentifier>{7a0650f8-f70a-4dc0-865a-7c3cd1d3db59}</UniqueIdentifier>
-    </Filter>
     <Filter Include="External">
       <UniqueIdentifier>{0bb71fba-b0e3-49ca-982a-2892338d7566}</UniqueIdentifier>
     </Filter>
@@ -104,30 +101,6 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Shaders\CreateFloor.comp">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\FillTexture.comp">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\Test0.comp">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\Test0.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\Test0.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\TestPost.comp">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\PostVS.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\Shaders\BuildShaders.bat">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="Script.ini" />
   </ItemGroup>
 </Project>
