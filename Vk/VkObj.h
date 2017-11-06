@@ -4,7 +4,7 @@
 
 #include "../Utils/Util.h"
 #pragma optimize( "gt", on )
-#include "../Meshes/tiny_obj_loader.h"
+#include "../Utils/External/tiny_obj_loader.h"
 #pragma optimize( "gt", off )
 #include "VkDevice.h"
 #include "VkResources.h"

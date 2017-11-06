@@ -8,11 +8,11 @@
 #include <unordered_map>
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "../Meshes/tiny_obj_loader.h"
+#include "../Utils/External/tiny_obj_loader.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ASSERT(x) check(x)
-#include "../Utils/stb_image.h"
+#include "../Utils/External/stb_image.h"
 
 namespace std
 {

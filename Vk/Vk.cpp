@@ -7,9 +7,9 @@
 #include "../Meshes/ObjLoader.h"
 #include "VkObj.h"
 
-#include "../Utils/glm/glm/vec4.hpp"
-#include "../Utils/glm/glm/mat4x4.hpp"
-#include "../Utils/glm/glm/gtc/matrix_transform.hpp"
+#include "../Utils/External/glm/glm/vec4.hpp"
+#include "../Utils/External/glm/glm/mat4x4.hpp"
+#include "../Utils/External/glm/glm/gtc/matrix_transform.hpp"
 
 static FIni GIni;
 extern std::string GModelName;
