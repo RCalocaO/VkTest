@@ -265,6 +265,7 @@ struct FStagingBuffer : public FBuffer
 
 	void SetFence(FPrimaryCmdBuffer* InCmdBuffer)
 	{
+		check(InCmdBuffer);
 		CmdBuffer = InCmdBuffer;
 		FenceCounter = InCmdBuffer->Fence->FenceSignaledCounter;
 	}
@@ -794,6 +795,7 @@ struct FBasePipeline
 	bool SetUniformBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FUniformBuffer<TStruct>& UB);
 	bool SetSampler(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler);
 	bool SetImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler, const FImageView& ImageView, VkImageLayout Layout);
+	bool SetStorageImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FImageView& ImageView);
 };
 
 class FDescriptorSet
@@ -1058,8 +1060,10 @@ struct FGfxPipeline : public FBasePipeline
 
 struct FComputePipeline : public FBasePipeline
 {
-	void Create(VkDevice Device, FComputePSO* PSO)
+	void Create(VkDevice Device, FComputePSO* InPSO)
 	{
+		PSO = InPSO;
+
 		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 		PSO->SetupShaderStages(ShaderStages);
 		check(ShaderStages.size() == 1);
@@ -1751,6 +1755,22 @@ inline bool FBasePipeline::SetImage(FWriteDescriptors& WriteDescriptors, FDescri
 		{
 			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::SampledImage);
 			WriteDescriptors.AddImage(DescriptorSet, Reflection.BindingIndex, Sampler, ImageView, Layout);
+		}
+
+		return true;
+	}
+	return false;
+}
+
+inline bool FBasePipeline::SetStorageImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FImageView& ImageView)
+{
+	auto Found = PSO->ReflectionInfo.find(Name);
+	if (Found != PSO->ReflectionInfo.end())
+	{
+		for (const FPSO::FReflection& Reflection : Found->second)
+		{
+			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::StorageImage);
+			WriteDescriptors.AddStorageImage(DescriptorSet, Reflection.BindingIndex, ImageView);
 		}
 
 		return true;

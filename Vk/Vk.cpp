@@ -362,6 +362,7 @@ struct FUnlitPSO : public FGfxPSO
 	{
 	}
 
+
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -692,8 +693,8 @@ void GenerateMips(FCmdBuffer* CmdBuffer, FImage2DWithView& Image, std::vector<FI
 
 		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GGenerateMipsPSO.DSLayout);
 		FWriteDescriptors WriteDescriptors;
-		WriteDescriptors.AddSampler(DescriptorSet, 0, GTrilinearSampler);
-		WriteDescriptors.AddImage(DescriptorSet, 1, GTrilinearSampler, *SourceImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		Pipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
+		Pipeline->SetImage(WriteDescriptors, DescriptorSet, "InTexture", GTrilinearSampler, *SourceImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
 
@@ -724,11 +725,9 @@ void CreateAndFillTexture()
 		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GFillTexturePSO.DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
-		WriteDescriptors.AddStorageImage(DescriptorSet, 0, GCheckerboardTexture.ImageView);
+		Pipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", GCheckerboardTexture.ImageView);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
-		//vkUpdateDescriptorSets(GDevice.Device, (uint32)WriteDescriptors.DSWrites.size(), &WriteDescriptors.DSWrites[0], 0, nullptr);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline);
-		//vkCmdBindDescriptorSets(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->PipelineLayout, 0, 1, &DescriptorSet.Set, 0, nullptr);
 	}
 
 	vkCmdDispatch(CmdBuffer->CmdBuffer, GCheckerboardTexture.GetWidth() / 8, GCheckerboardTexture.GetHeight() / 8, 1);
@@ -895,14 +894,14 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	while (Token = strchr(Token, ' '))
 	{
 		++Token;
-		if (!_strcmpi(Token, "-debugger"))
+		if (!_strnicmp(Token, "-debugger", 9))
 		{
 			while (!::IsDebuggerPresent())
 			{
 				Sleep(0);
 			}
 		}
-		else if (!_strcmpi(Token, "-validation"))
+		else if (!_strnicmp(Token, "-validation", 11))
 		{
 			GValidation = true;
 		}
@@ -951,11 +950,11 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 			GIni.Load(IniName.c_str());
 		}
-		else if (!_strcmpi(Token, "-renderdoc"))
+		else if (!_strnicmp(Token, "-renderdoc", 10))
 		{
 			GRenderDoc = true;
 		}
-		else if (!_strcmpi(Token, "-vktrace"))
+		else if (!_strnicmp(Token, "-vktrace", 8))
 		{
 			GVkTrace = true;
 		}
@@ -1132,11 +1131,8 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 			FWriteDescriptors WriteDescriptors;
 			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ViewUB", GViewUB);
-			//WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
 			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ObjUB", GIdentityUB);
-			//WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
 			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
-			//WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
 			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "Tex", GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
@@ -1151,10 +1147,10 @@ static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
 
 	FWriteDescriptors WriteDescriptors;
-	WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-	WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GIdentityUB);
-	WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-	WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, GCheckerboardTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ViewUB", GViewUB);
+	GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ObjUB", GIdentityUB);
+	GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
+	GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "Tex", GTrilinearSampler, GCheckerboardTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 	DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
 
@@ -1262,8 +1258,8 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
-		WriteDescriptors.AddStorageImage(DescriptorSet, 0, SceneColorEntry->Texture.ImageView);
-		WriteDescriptors.AddStorageImage(DescriptorSet, 1, SceneColorAfterPostEntry->Texture.ImageView);
+		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "InImage", SceneColorEntry->Texture.ImageView);
+		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", SceneColorAfterPostEntry->Texture.ImageView);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
