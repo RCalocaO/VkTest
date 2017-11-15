@@ -116,40 +116,52 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 	for (int32 Index = 0; Index < Obj->Loaded->materials.size(); ++Index)
 	{
 		auto& Material = Obj->Loaded->materials[Index];
+		::OutputDebugStringA("Material Diffuse ");
+		::OutputDebugStringA(Material.diffuse_texname.c_str());
+		::OutputDebugStringA("\n");
 		if (!Material.diffuse_texname.empty())
 		{
-			std::string Texture = FileUtils::MakePath(Obj->BaseDir, Material.diffuse_texname);
-			std::vector<char> FileData = LoadFile(Texture.c_str());
-			if (!FileData.empty())
+			FImage2DWithView* Image = nullptr;
+			auto Found = Textures.find(Material.diffuse_texname);
+			if (Found != Textures.end())
 			{
-				int W, H, C;
-				auto* PixelData = stbi_load_from_memory((stbi_uc*)&FileData[0], (int)FileData.size(), &W, &H, &C, 4);
-				if (PixelData)
+				Image = Found->second;
+			}
+			else
+			{
+				std::string Texture = FileUtils::MakePath(Obj->BaseDir, Material.diffuse_texname);
+				std::vector<char> FileData = LoadFile(Texture.c_str());
+				if (!FileData.empty())
 				{
-					FImage2DWithView* Image = new FImage2DWithView;
-					Image->Create(Device->Device, W, H, VK_FORMAT_R8G8B8A8_UNORM,
-						VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-						VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr, 1, VK_SAMPLE_COUNT_1_BIT, __FILE__, __LINE__);
-
-					uint32 Size = W * H * 4;
-
-					MapAndFillImageSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Image->Image, 
-						[&](FPrimaryCmdBuffer* CmdBuffer, void* Data, uint32 Width, uint32 Height)
+					int W, H, C;
+					auto* PixelData = stbi_load_from_memory((stbi_uc*)&FileData[0], (int)FileData.size(), &W, &H, &C, 4);
+					if (PixelData)
 					{
-						ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, Image->Image.Image,
-							VK_IMAGE_LAYOUT_UNDEFINED, 0,
-							VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
-							VK_IMAGE_ASPECT_COLOR_BIT);
-						memcpy(Data, PixelData, Size);
-					}, Size);
-					Textures[Material.diffuse_texname] = Image;
-					FBatch* Batch = FindBatchByMaterialID(Index);
-					if (Batch)
-					{
-						Batch->Image = Image;
+						Image = new FImage2DWithView;
+						Image->Create(Device->Device, W, H, VK_FORMAT_R8G8B8A8_UNORM,
+							VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+							VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr, 1, VK_SAMPLE_COUNT_1_BIT, __FILE__, __LINE__);
+
+						uint32 Size = W * H * 4;
+
+						MapAndFillImageSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Image->Image,
+							[&](FPrimaryCmdBuffer* CmdBuffer, void* Data, uint32 Width, uint32 Height)
+						{
+							ImageBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, Image->Image.Image,
+								VK_IMAGE_LAYOUT_UNDEFINED, 0,
+								VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+								VK_IMAGE_ASPECT_COLOR_BIT);
+							memcpy(Data, PixelData, Size);
+						}, Size);
 					}
+					stbi_image_free(PixelData);
+					Textures[Material.diffuse_texname] = Image;
 				}
-				stbi_image_free(PixelData);
+			}
+			FBatch* Batch = FindBatchByMaterialID(Index);
+			if (Batch)
+			{
+				Batch->Image = Image;
 			}
 		}
 	}
