@@ -44,7 +44,8 @@ struct FMesh
 	{
 		FVertexBuffer ObjVB;
 		FIndexBuffer ObjIB;
-		FImage2DWithView* Image = nullptr;
+		FImage2DWithView* DiffuseTexture = nullptr;
+		FImage2DWithView* BumpTexture = nullptr;
 		uint32 NumVertices = 0;
 		uint32 NumIndices = 0;
 		int MaterialID = -1;
@@ -84,6 +85,8 @@ struct FMesh
 		}
 		Textures.clear();
 	}
+
+	void SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr, int32 Index, const std::string& MaterialTextureName, size_t OffsetIntoBatchMemberImage);
 };
 
 

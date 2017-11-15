@@ -1037,7 +1037,7 @@ static void DrawMesh(FCmdBuffer* CmdBuffer, FMesh& Mesh, TSetDescriptors SetDesc
 {
 	for (auto* Batch : Mesh.Batches)
 	{
-		FImage2DWithView* Image = Batch->Image ? Batch->Image : &GGradient;
+		FImage2DWithView* Image = Batch->DiffuseTexture ? Batch->DiffuseTexture : &GGradient;
 		SetDescriptors(Image);
 		CmdBind(CmdBuffer, &Batch->ObjVB);
 		CmdBind(CmdBuffer, &Batch->ObjIB);
