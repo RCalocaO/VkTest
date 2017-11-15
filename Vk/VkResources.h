@@ -12,7 +12,7 @@ class FDescriptorSet;
 
 struct FBuffer
 {
-	void Create(VkDevice InDevice, uint64 InSize, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr)
+	void Create(VkDevice InDevice, uint64 InSize, VkBufferUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, const char* InFile, int InLine)
 	{
 		Device = InDevice;
 		Size = InSize;
@@ -29,7 +29,7 @@ struct FBuffer
 
 		bool bMapped = (MemPropertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, false, bMapped);
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, false, bMapped, InFile, InLine);
 
 		vkBindBufferMemory(Device, Buffer, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
@@ -77,7 +77,7 @@ struct FIndexBuffer
 		IndexType = InIndexType;
 		NumIndices = InNumIndices;
 		uint32 IndexSize = InIndexType == VK_INDEX_TYPE_UINT16 ? 2 : 4;
-		Buffer.Create(InDevice, InNumIndices * IndexSize, UsageFlags, MemPropertyFlags, MemMgr);
+		Buffer.Create(InDevice, InNumIndices * IndexSize, UsageFlags, MemPropertyFlags, MemMgr, __FILE__, __LINE__);
 	}
 
 	void Destroy()
@@ -102,7 +102,7 @@ struct FVertexBuffer
 		VkMemoryPropertyFlags MemPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 	{
 		VkBufferUsageFlags UsageFlags = InUsageFlags | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-		Buffer.Create(InDevice, Size, UsageFlags, MemPropertyFlags, MemMgr);
+		Buffer.Create(InDevice, Size, UsageFlags, MemPropertyFlags, MemMgr, __FILE__, __LINE__);
 	}
 
 	void Destroy()
@@ -124,7 +124,7 @@ struct FUniformBuffer
 {
 	void Create(VkDevice InDevice, FMemManager* MemMgr)
 	{
-		UploadBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, MemMgr);
+		UploadBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, MemMgr, __FILE__, __LINE__);
 	}
 
 	TStruct* GetMappedData()
@@ -145,7 +145,7 @@ struct FGPUUniformBuffer
 {
 	void Create(VkDevice InDevice, FMemManager* MemMgr)
 	{
-		GPUBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr);
+		GPUBuffer.Create(InDevice, sizeof(TStruct), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr, __FILE__, __LINE__);
 	}
 
 	void Destroy()
@@ -158,7 +158,7 @@ struct FGPUUniformBuffer
 
 struct FImage
 {
-	void Create2D(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits InSamples, bool bCubemap, uint32 NumArrayLayers)
+	void Create2D(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat InFormat, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits InSamples, bool bCubemap, uint32 NumArrayLayers, const char* InFile, int InLine)
 	{
 		Device = InDevice;
 		Width = InWidth;
@@ -188,7 +188,7 @@ struct FImage
 
 		vkGetImageMemoryRequirements(Device, Image, &Reqs);
 
-		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, true, false);
+		SubAlloc = MemMgr->Alloc(Reqs, MemPropertyFlags, true, false, InFile, InLine);
 
 		vkBindImageMemory(Device, Image, SubAlloc->GetHandle(), SubAlloc->GetBindOffset());
 	}
@@ -312,7 +312,7 @@ struct FStagingManager
 		}
 */
 		auto* Buffer = new FStagingBuffer;
-		Buffer->Create(Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, MemMgr);
+		Buffer->Create(Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, MemMgr, __FILE__, __LINE__);
 		FEntry Entry;
 		Entry.Buffer = Buffer;
 		Entry.bFree = false;
@@ -417,9 +417,9 @@ struct FBaseImageWithView
 
 struct FImage2DWithView : public FBaseImageWithView
 {
-	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
+	void Create(VkDevice InDevice, uint32 InWidth, uint32 InHeight, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips, VkSampleCountFlagBits Samples, const char* InFile, int InLine)
 	{
-		Image.Create2D(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, false, 1);
+		Image.Create2D(InDevice, InWidth, InHeight, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, false, 1, InFile, InLine);
 		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_2D, Format, GetImageAspectFlags(Format), InNumMips, 1);
 	}
 
@@ -438,7 +438,7 @@ struct FImageCubeWithView : public FBaseImageWithView
 {
 	void Create(VkDevice InDevice, uint32 InSize, VkFormat Format, VkImageUsageFlags UsageFlags, VkMemoryPropertyFlags MemPropertyFlags, FMemManager* MemMgr, uint32 InNumMips = 1, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT)
 	{
-		Image.Create2D(InDevice, InSize, InSize, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, true, 6);
+		Image.Create2D(InDevice, InSize, InSize, Format, UsageFlags, MemPropertyFlags, MemMgr, InNumMips, Samples, true, 6, __FILE__, __LINE__);
 		ImageView.Create(InDevice, Image.Image, VK_IMAGE_VIEW_TYPE_CUBE, Format, GetImageAspectFlags(Format), InNumMips, 6);
 	}
 

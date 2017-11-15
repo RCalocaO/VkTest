@@ -129,7 +129,7 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 					FImage2DWithView* Image = new FImage2DWithView;
 					Image->Create(Device->Device, W, H, VK_FORMAT_R8G8B8A8_UNORM,
 						VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-						VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr);
+						VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, MemMgr, 1, VK_SAMPLE_COUNT_1_BIT, __FILE__, __LINE__);
 
 					uint32 Size = W * H * 4;
 

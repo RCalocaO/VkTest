@@ -82,7 +82,7 @@ class FMemPage
 public:
 	FMemPage(VkDevice InDevice, VkDeviceSize Size, uint32 InMemTypeIndex, VkMemoryPropertyFlags InMemPropertyFlags, bool bInMapped);
 
-	FMemSubAlloc* TryAlloc(uint64 Size, uint64 Alignment);
+	FMemSubAlloc* TryAlloc(uint64 Size, uint64 Alignment, const char* InFile, int InLine);
 
 	void Release(FMemSubAlloc* SubAlloc);
 
@@ -116,11 +116,13 @@ protected:
 class FMemSubAlloc
 {
 public:
-	FMemSubAlloc(uint64 InAllocatedOffset, uint64 InAlignedOffset, uint64 InSize, FMemPage* InOwner)
+	FMemSubAlloc(uint64 InAllocatedOffset, uint64 InAlignedOffset, uint64 InSize, FMemPage* InOwner, const char* InFile, int InLine)
 		: AllocatedOffset(InAllocatedOffset)
 		, AlignedOffset(InAlignedOffset)
 		, Size(InSize)
 		, Owner(InOwner)
+		, File(InFile)
+		, Line(InLine)
 	{
 	}
 
@@ -158,6 +160,8 @@ protected:
 	const uint64 AlignedOffset;
 	const uint64 Size;
 	FMemPage* Owner;
+	const char* File;
+	int Line;
 	friend class FMemPage;
 };
 
@@ -203,7 +207,7 @@ struct FMemManager
 		return (uint32)-1;
 	}
 
-	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags InMemPropertyFlags, bool bImage, bool bInMapped)
+	FMemSubAlloc* Alloc(const VkMemoryRequirements& Reqs, VkMemoryPropertyFlags InMemPropertyFlags, bool bImage, bool bInMapped, const char* InFile, int InLine)
 	{
 		const uint32 MemTypeIndex = GetMemTypeIndex(Reqs.memoryTypeBits, InMemPropertyFlags);
 		auto& Pages = (bImage ? ImagePages : BufferPages)[MemTypeIndex];
@@ -220,7 +224,7 @@ struct FMemManager
 		const uint64 PageSize = max(DEFAULT_PAGE_SIZE, Reqs.size);
 		auto* NewPage = new FMemPage(Device, PageSize, MemTypeIndex, InMemPropertyFlags, bInMapped);
 		Pages.push_back(NewPage);
-		auto* SubAlloc = NewPage->TryAlloc(Reqs.size, Reqs.alignment);
+		auto* SubAlloc = NewPage->TryAlloc(Reqs.size, Reqs.alignment, InFile, InLine);
 		check(SubAlloc);
 		return SubAlloc;
 	}

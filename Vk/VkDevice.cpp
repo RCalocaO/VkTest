@@ -654,16 +654,25 @@ FMemPage::~FMemPage()
 	Allocation.Destroy();
 }
 
-FMemSubAlloc* FMemPage::TryAlloc(uint64 Size, uint64 Alignment)
+FMemSubAlloc* FMemPage::TryAlloc(uint64 Size, uint64 Alignment, const char* InFile, int InLine)
 {
-	for (auto& Range : FreeList)
+	for (size_t Index = 0; Index < FreeList.size(); ++Index)
 	{
+		auto& Range = FreeList[Index];
 		uint64 AlignedOffset = Align(Range.Begin, Alignment);
 		if (AlignedOffset + Size <= Range.End)
 		{
-			auto* SubAlloc = new FMemSubAlloc(Range.Begin, AlignedOffset, Size, this);
+			auto* SubAlloc = new FMemSubAlloc(Range.Begin, AlignedOffset, Size, this, InFile, InLine);
 			SubAllocations.push_back(SubAlloc);
 			Range.Begin = AlignedOffset + Size;
+			if (Range.End == Range.Begin)
+			{
+				for (size_t Rest = Index + 1; Rest < FreeList.size(); ++Rest)
+				{
+					FreeList[Index] = FreeList[Rest];
+				}
+				FreeList.pop_back();
+			}
 			return SubAlloc;
 		}
 	}
