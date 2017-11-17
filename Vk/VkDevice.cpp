@@ -580,6 +580,7 @@ FGfxPipeline::FGfxPipeline()
 void FGfxPipeline::Create(VkDevice Device, const FGfxPSO* InPSO, const FVertexFormat* VertexFormat, uint32 Width, uint32 Height, const FRenderPass* RenderPass)
 {
 	PSO = InPSO;
+	PSO->Pipelines.push_back(this);
 
 	std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 	PSO->SetupShaderStages(ShaderStages);

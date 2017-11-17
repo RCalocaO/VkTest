@@ -585,10 +585,26 @@ struct FShader : public IShader
 struct FPSO
 {
 	FVulkanShaderCollection& Collection;
+	mutable std::vector<FBasePipeline*> Pipelines;
 
 	FPSO(FVulkanShaderCollection& InCollection)
 		: Collection(InCollection)
 	{
+	}
+
+	void RemovePipeline(FBasePipeline* Pipeline)
+	{
+		std::vector<FBasePipeline*> New;
+		for (auto* P : Pipelines)
+		{
+			if (P != Pipeline)
+			{
+				New.push_back(P);
+			}
+		}
+
+		check(New.size() == Pipelines.size() - 1);
+		Pipelines.swap(New);
 	}
 
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
@@ -1063,6 +1079,7 @@ struct FComputePipeline : public FBasePipeline
 	void Create(VkDevice Device, FComputePSO* InPSO)
 	{
 		PSO = InPSO;
+		PSO->Pipelines.push_back(this);
 
 		std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
 		PSO->SetupShaderStages(ShaderStages);
@@ -1578,8 +1595,13 @@ struct FVulkanShaderCollection : FShaderCollection
 		FShaderCollection::RegisterGfxPSO(Name, Pipeline, GetVulkanShader(VertexHandle), GetVulkanShader(PixelHandle));
 	}
 
-	virtual void DestroyAndDelete(FBasePipeline* PSO) override
+	virtual void DestroyAndDelete(FPSO* PSO) override
 	{
+		for (auto* Pipeline : PSO->Pipelines)
+		{
+			Pipeline->Destroy(Device);
+			delete Pipeline;
+		}
 		PSO->Destroy(Device);
 		delete PSO;
 	}
@@ -1590,10 +1612,10 @@ struct FVulkanShaderCollection : FShaderCollection
 		{
 			if (Info.Shader)
 			{
-				Info.Shader->Destroy();
-				delete Info.Shader;
+				ShadersToDestroy.push_back(Info.Shader);
 			}
 		}
+		ProcessPendingDeletions();
 		ShaderInfos.clear();
 	}
 

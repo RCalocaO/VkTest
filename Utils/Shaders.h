@@ -49,13 +49,15 @@ struct IShader
 {
 	EShaderStage Stage = EShaderStage::Unknown;
 	FShaderInfo Info;
-	std::list<FBasePipeline*> PSOs;
 
 	IShader(const FShaderInfo& InInfo)
 		: Info(InInfo)
 	{
 	}
 
+	virtual ~IShader()
+	{
+	}
 	virtual void Destroy() = 0;
 };
 
@@ -113,12 +115,15 @@ struct FShaderCollection
 				DoCompileFromBinary(ShaderInfo);
 			}
 		}
+	}
 
-		// Gather PSOs
-		std::set<FBasePipeline*> PSOsToDestroy;
+	void ProcessPendingDeletions()
+	{
+		// Gather Pipelines
+		std::set<FPSO*> PSOsToDestroy;
 		for (auto* Shader : ShadersToDestroy)
 		{
-			for (auto* PSO : Shader->PSOs)
+			for (auto PSO : ShaderToPSOMap[Shader])
 			{
 				PSOsToDestroy.insert(PSO);
 			}
@@ -171,7 +176,7 @@ struct FShaderCollection
 	virtual bool DoCompileFromBinary(FShaderInfo& Info) = 0;
 	virtual bool DoCompileFromSource(FShaderInfo& Info) = 0;
 
-	virtual void DestroyAndDelete(FBasePipeline* PSO) = 0;
+	virtual void DestroyAndDelete(FPSO* PSO) = 0;
 
 	void Destroy(FShaderHandle& Handle)
 	{

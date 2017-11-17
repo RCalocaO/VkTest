@@ -613,15 +613,19 @@ struct FObjectCache
 
 		for (auto& Pair : ComputePipelines)
 		{
-			Pair.second->Destroy(Device->Device);
-			delete Pair.second;
+			FComputePipeline* Pipeline = Pair.second;
+			((FPSO*)Pipeline->PSO)->RemovePipeline(Pipeline);
+			Pipeline->Destroy(Device->Device);
+			delete Pipeline;
 		}
 		ComputePipelines.swap(decltype(ComputePipelines)());
 
 		for (auto& Pair : GfxPipelines)
 		{
-			Pair.second->Destroy(Device->Device);
-			delete Pair.second;
+			FGfxPipeline* Pipeline = Pair.second;
+			((FPSO*)Pipeline->PSO)->RemovePipeline(Pipeline);
+			Pipeline->Destroy(Device->Device);
+			delete Pipeline;
 		}
 		GfxPipelines.swap(decltype(GfxPipelines)());
 
