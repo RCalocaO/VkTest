@@ -18,6 +18,9 @@ struct FShaderHandle
 	int32_t ID = -1;
 };
 
+struct FPSO;
+struct FComputePSO;
+struct FGfxPSO;
 struct FBasePipeline;
 
 struct FShaderInfo
@@ -58,6 +61,41 @@ struct IShader
 
 struct FShaderCollection
 {
+	void RegisterGfxPSO(const char* Name, FGfxPSO* PSO, IShader* Vertex, IShader* Pixel)
+	{
+		GfxPSOs[Name] = PSO;
+		ShaderToPSOMap[Vertex].push_back((FPSO*)PSO);
+		if (Pixel)
+		{
+			ShaderToPSOMap[Pixel].push_back((FPSO*)PSO);
+		}
+	}
+
+	void RegisterComputePSO(const char* Name, FComputePSO* PSO, IShader* Compute)
+	{
+		ComputePSOs[Name] = PSO;
+		ShaderToPSOMap[Compute].push_back((FPSO*)PSO);
+	}
+
+	std::map<std::string, FGfxPSO*> GfxPSOs;
+	std::map<std::string, FComputePSO*> ComputePSOs;
+
+	std::map<IShader*, std::vector<FPSO*>> ShaderToPSOMap;
+
+	FGfxPSO* GetGfxPSO(const char* Name)
+	{
+		auto Found = GfxPSOs.find(Name);
+		check(Found != GfxPSOs.end());
+		return Found->second;
+	}
+
+	FComputePSO* GetComputePSO(const char* Name)
+	{
+		auto Found = ComputePSOs.find(Name);
+		check(Found != ComputePSOs.end());
+		return Found->second;
+	}
+
 	std::vector<IShader*> ShadersToDestroy;
 
 	void ReloadShaders()
@@ -96,6 +134,8 @@ struct FShaderCollection
 			Shader->Destroy();
 			delete Shader;
 		}
+
+		ShadersToDestroy.clear();
 	}
 
 	IShader* GetShader(FShaderHandle Handle)

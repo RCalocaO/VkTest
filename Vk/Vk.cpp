@@ -396,7 +396,6 @@ struct FLitPSO : public FGfxPSO
 	{
 	}
 
-
 	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
 	{
 		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -406,7 +405,7 @@ struct FLitPSO : public FGfxPSO
 		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
-FLitPSO GLitPSO;
+//FLitPSO GLitPSO;
 
 struct FGenerateMipsPSO : public FGfxPSO
 {
@@ -655,7 +654,8 @@ static bool LoadShadersAndGeometry()
 	check(GSetupFloorPSO.Create(GDevice.Device, CreateFloorCS));
 	check(GGenerateMipsPSO.CreateVSPS(GDevice.Device, PassThroughVS, GenerateMipsPS));
 	check(GUnlitPSO.CreateVSPS(GDevice.Device, UnlitVS, UnlitPS));
-	check(GLitPSO.CreateVSPS(GDevice.Device, LitVS, LitPS));
+	//check(GLitPSO.CreateVSPS(GDevice.Device, LitVS, LitPS));
+	GShaderCollection.RegisterGfxPSO<FLitPSO>("LitPSO", LitVS, LitPS);
 	check(GTestComputePostPSO.Create(GDevice.Device, TestPostCS));
 	check(GFillTexturePSO.Create(GDevice.Device, FillTextureCS));
 	check(GTestComputePSO.Create(GDevice.Device, TestComputeCS));
@@ -1258,7 +1258,7 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 	}
 	else
 	{
-		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GLitPSO, &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
+		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("LitPSO"), &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
 		vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 		SetDynamicStates(GfxCmdBuffer->CmdBuffer, Width, Height);
 		DrawModel(GfxPipeline, Device, GfxCmdBuffer);
@@ -1547,7 +1547,7 @@ void DoDeinit()
 	GTestComputePostPSO.Destroy(GDevice.Device);
 	GTestComputePSO.Destroy(GDevice.Device);
 	GUnlitPSO.Destroy(GDevice.Device);
-	GLitPSO.Destroy(GDevice.Device);
+	//GLitPSO.Destroy(GDevice.Device);
 	GGenerateMipsPSO.Destroy(GDevice.Device);
 	GSetupFloorPSO.Destroy(GDevice.Device);
 	GFillTexturePSO.Destroy(GDevice.Device);

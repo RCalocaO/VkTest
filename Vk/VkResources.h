@@ -1570,6 +1570,14 @@ struct FVulkanShaderCollection : FShaderCollection
 		}
 	}
 
+	template <typename TPSOType>
+	void RegisterGfxPSO(const char* Name, FShaderHandle VertexHandle, FShaderHandle PixelHandle)
+	{
+		TPSOType* Pipeline = new TPSOType;
+		Pipeline->CreateVSPS(Device, VertexHandle, PixelHandle);
+		FShaderCollection::RegisterGfxPSO(Name, Pipeline, GetVulkanShader(VertexHandle), GetVulkanShader(PixelHandle));
+	}
+
 	virtual void DestroyAndDelete(FBasePipeline* PSO) override
 	{
 		PSO->Destroy(Device);
