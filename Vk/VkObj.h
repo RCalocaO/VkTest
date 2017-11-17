@@ -86,7 +86,7 @@ struct FMesh
 		Textures.clear();
 	}
 
-	void SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr, int32 Index, const std::string& MaterialTextureName, size_t OffsetIntoBatchMemberImage);
+	void SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr, int32 Index, const std::string& MaterialTextureName, std::function<FImage2DWithView*&(FBatch* Batch)> Callback);
 };
 
 

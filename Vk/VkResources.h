@@ -1570,6 +1570,12 @@ struct FVulkanShaderCollection : FShaderCollection
 		}
 	}
 
+	virtual void DestroyAndDelete(FBasePipeline* PSO) override
+	{
+		PSO->Destroy(Device);
+		delete PSO;
+	}
+
 	void Destroy()
 	{
 		for (auto& Info : ShaderInfos)
@@ -1611,6 +1617,12 @@ struct FVulkanShaderCollection : FShaderCollection
 				Error += FileString;
 				Error += "\n";
 				::OutputDebugStringA(Error.c_str());
+
+				int DialogResult = ::MessageBoxA(nullptr, Error.c_str(), Info.SourceFile.c_str(), MB_CANCELTRYCONTINUE);
+				if (DialogResult == IDTRYAGAIN)
+				{
+					return DoCompileFromSource(Info);
+				}				
 			}
 
 			return false;
@@ -1629,7 +1641,10 @@ struct FVulkanShaderCollection : FShaderCollection
 		}
 
 		//#todo: Destroy old; sync with rendering
-		check(!Info.Shader);
+		if (Info.Shader)
+		{
+			ShadersToDestroy.push_back(Info.Shader);
+		}
 		Info.Shader = CreateShader(Info, File);
 
 		return Info.Shader != nullptr;

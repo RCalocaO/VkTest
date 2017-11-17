@@ -43,7 +43,7 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 	std::set<uint32> MaterialIndices;
 	for (auto& Shape : Obj->Loaded->shapes)
 	{
-		for (int32 i = 0; i < Shape.mesh.indices.size(); ++i)
+		for (size_t i = 0; i < Shape.mesh.indices.size(); ++i)
 		{
 			auto MeshIndex = Shape.mesh.indices[i];
 			FPosColorUVVertex Vertex;
@@ -113,16 +113,15 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 		Batches.push_back(Batch);
 	}
 
-	for (int32 Index = 0; Index < Obj->Loaded->materials.size(); ++Index)
+	for (size_t Index = 0; Index < Obj->Loaded->materials.size(); ++Index)
 	{
 		auto& Material = Obj->Loaded->materials[Index];
-		SetupTexture(Obj, Device, CmdBufMgr, StagingMgr, MemMgr, Index, Material.diffuse_texname, offsetof(FBatch, DiffuseTexture));
-		SetupTexture(Obj, Device, CmdBufMgr, StagingMgr, MemMgr, Index, Material.bump_texname, offsetof(FBatch, BumpTexture));
+		SetupTexture(Obj, Device, CmdBufMgr, StagingMgr, MemMgr, (int32)Index, Material.diffuse_texname, [](FBatch* Batch) -> FImage2DWithView*& { return Batch->DiffuseTexture; } );
+		SetupTexture(Obj, Device, CmdBufMgr, StagingMgr, MemMgr, (int32)Index, Material.bump_texname, [](FBatch* Batch) -> FImage2DWithView*& { return Batch->BumpTexture; });
 	}
 }
 
-
-void FMesh::SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr, int32 Index, const std::string& MaterialTextureName, size_t OffsetIntoBatchMemberImage)
+void FMesh::SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr, int32 Index, const std::string& MaterialTextureName, std::function<FImage2DWithView*&(FBatch* Batch)> Callback)
 {
 	if (!MaterialTextureName.empty())
 	{
@@ -166,7 +165,7 @@ void FMesh::SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, F
 		FBatch* Batch = FindBatchByMaterialID(Index);
 		if (Batch)
 		{
-			*(FImage2DWithView**)((char*)Batch + OffsetIntoBatchMemberImage) = Image;
+			Callback(Batch) = Image;
 		}
 	}
 }
