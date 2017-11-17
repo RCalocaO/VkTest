@@ -387,7 +387,6 @@ struct FUnlitPSO : public FGfxPSO
 		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
-FUnlitPSO GUnlitPSO;
 
 struct FLitPSO : public FGfxPSO
 {
@@ -405,7 +404,6 @@ struct FLitPSO : public FGfxPSO
 		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
-//FLitPSO GLitPSO;
 
 struct FGenerateMipsPSO : public FGfxPSO
 {
@@ -420,7 +418,6 @@ struct FGenerateMipsPSO : public FGfxPSO
 		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
-FGenerateMipsPSO GGenerateMipsPSO;
 
 struct FOneImagePSO : public FComputePSO
 {
@@ -468,7 +465,6 @@ struct FSetupFloorPSO : public FComputePSO
 		AddBinding(OutBindings, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 	}
 };
-static FSetupFloorPSO GSetupFloorPSO;
 
 
 struct FObjectCache
@@ -655,10 +651,9 @@ static bool LoadShadersAndGeometry()
 
 	GShaderCollection.ReloadShaders();
 
-	check(GSetupFloorPSO.Create(GDevice.Device, CreateFloorCS));
-	check(GGenerateMipsPSO.CreateVSPS(GDevice.Device, PassThroughVS, GenerateMipsPS));
-	check(GUnlitPSO.CreateVSPS(GDevice.Device, UnlitVS, UnlitPS));
-	//check(GLitPSO.CreateVSPS(GDevice.Device, LitVS, LitPS));
+	GShaderCollection.RegisterComputePSO<FSetupFloorPSO>("SetupFloorPSO", CreateFloorCS);
+	GShaderCollection.RegisterGfxPSO<FGenerateMipsPSO>("GenerateMipsPSO", PassThroughVS, GenerateMipsPS);
+	GShaderCollection.RegisterGfxPSO<FUnlitPSO>("UnlitPSO", UnlitVS, UnlitPS);
 	GShaderCollection.RegisterGfxPSO<FLitPSO>("LitPSO", LitVS, LitPS);
 	check(GTestComputePostPSO.Create(GDevice.Device, TestPostCS));
 	check(GFillTexturePSO.Create(GDevice.Device, FillTextureCS));
@@ -698,7 +693,7 @@ void GenerateMips(FCmdBuffer* CmdBuffer, FImage2DWithView& Image, std::vector<FI
 	FImageView* DestImageView = nullptr;
 
 	auto* RenderPass = GObjectCache.GetOrCreateRenderPass(Image.GetWidth(), Image.GetHeight(), 1, &Format);
-	auto* Pipeline = GObjectCache.GetOrCreateGfxPipeline(&GGenerateMipsPSO, nullptr, Image.GetWidth(), Image.GetHeight(), RenderPass);
+	auto* Pipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("GenerateMipsPSO"), nullptr, Image.GetWidth(), Image.GetHeight(), RenderPass);
 	VkViewport Viewport;
 	MemZero(Viewport);
 	VkRect2D Scissor;
@@ -733,7 +728,7 @@ void GenerateMips(FCmdBuffer* CmdBuffer, FImage2DWithView& Image, std::vector<FI
 		Scissor.extent.height = Image.GetHeight() >> Index;
 		vkCmdSetScissor(CmdBuffer->CmdBuffer, 0, 1, &Scissor);
 
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GGenerateMipsPSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(Pipeline->PSO->DSLayout);
 		FWriteDescriptors WriteDescriptors;
 		Pipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
 		Pipeline->SetImage(WriteDescriptors, DescriptorSet, "InTexture", GTrilinearSampler, *SourceImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -852,13 +847,13 @@ static void FillFloor(FCmdBuffer* CmdBuffer)
 {
 	BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorVB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
 	BufferBarrier(CmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, &GFloorIB.Buffer, 0, VK_ACCESS_SHADER_WRITE_BIT);
-	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GSetupFloorPSO);
+	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("SetupFloorPSO"));
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
 	FCreateFloorUB& CreateFloorUB = *GCreateFloorUB.GetMappedData();
 
 	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GSetupFloorPSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline->PSO->DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
 		WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
@@ -1152,7 +1147,7 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 		DrawMesh(GfxCmdBuffer, GCube,
 			[&](FImage2DWithView* Image)
 		{
-			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GUnlitPSO.DSLayout);
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
 
 			FWriteDescriptors WriteDescriptors;
 			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
@@ -1251,7 +1246,7 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 {
 	if (GModelName.empty())
 	{
-		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(&GUnlitPSO, &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
+		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("UnlitPSO"), &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
 		vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 
 		SetDynamicStates(GfxCmdBuffer->CmdBuffer, Width, Height);
@@ -1550,10 +1545,6 @@ void DoDeinit()
 
 	GTestComputePostPSO.Destroy(GDevice.Device);
 	GTestComputePSO.Destroy(GDevice.Device);
-	GUnlitPSO.Destroy(GDevice.Device);
-	//GLitPSO.Destroy(GDevice.Device);
-	GGenerateMipsPSO.Destroy(GDevice.Device);
-	GSetupFloorPSO.Destroy(GDevice.Device);
 	GFillTexturePSO.Destroy(GDevice.Device);
 
 	GRenderTargetPool.Destroy();
