@@ -419,9 +419,9 @@ struct FGenerateMipsPSO : public FGfxPSO
 	}
 };
 
-struct FOneImagePSO : public FComputePSO
+struct FFillTexturePSO : public FComputePSO
 {
-	FOneImagePSO()
+	FFillTexturePSO()
 		: FComputePSO(GShaderCollection)
 	{
 	}
@@ -431,7 +431,6 @@ struct FOneImagePSO : public FComputePSO
 		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 };
-FOneImagePSO GFillTexturePSO;
 
 struct FTestPostComputePSO : public FComputePSO
 {
@@ -446,7 +445,6 @@ struct FTestPostComputePSO : public FComputePSO
 		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 };
-FTestPostComputePSO GTestComputePSO;
 FTestPostComputePSO GTestComputePostPSO;
 
 struct FSetupFloorPSO : public FComputePSO
@@ -638,7 +636,6 @@ FObjectCache GObjectCache;
 
 static bool LoadShadersAndGeometry()
 {
-	FShaderHandle TestComputeCS = GShaderCollection.Register("../Shaders/TestComputeCS.hlsl", EShaderStage::Compute, "Main");
 	FShaderHandle PassThroughVS = GShaderCollection.Register("../Shaders/PassThroughVS.hlsl", EShaderStage::Vertex, "MainVS");
 	FShaderHandle UnlitVS = GShaderCollection.Register("../Shaders/Unlit.hlsl", EShaderStage::Vertex, "MainVS");
 	FShaderHandle UnlitPS = GShaderCollection.Register("../Shaders/Unlit.hlsl", EShaderStage::Pixel, "MainPS");
@@ -656,8 +653,7 @@ static bool LoadShadersAndGeometry()
 	GShaderCollection.RegisterGfxPSO<FUnlitPSO>("UnlitPSO", UnlitVS, UnlitPS);
 	GShaderCollection.RegisterGfxPSO<FLitPSO>("LitPSO", LitVS, LitPS);
 	check(GTestComputePostPSO.Create(GDevice.Device, TestPostCS));
-	check(GFillTexturePSO.Create(GDevice.Device, FillTextureCS));
-	check(GTestComputePSO.Create(GDevice.Device, TestComputeCS));
+	GShaderCollection.RegisterComputePSO<FFillTexturePSO>("FillTexturePSO", FillTextureCS);
 
 	// Setup Vertex Format
 	GPosColorUVFormat.AddVertexBuffer(0, sizeof(FPosColorUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
@@ -750,7 +746,7 @@ void CreateAndFillTexture()
 
 	GCubeTest.Create(GDevice.Device, 64, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &GMemMgr, 1);
 
-	FComputePipeline* Pipeline = GObjectCache.GetOrCreateComputePipeline(&GFillTexturePSO);
+	FComputePipeline* Pipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("FillTexturePSO"));
 
 	auto* CmdBuffer = GGfxCmdBufferMgr.AllocateCmdBuffer();
 	CmdBuffer->Begin();
@@ -759,7 +755,7 @@ void CreateAndFillTexture()
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->Pipeline);
 	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GFillTexturePSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(Pipeline->PSO->DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
 		Pipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", GCheckerboardTexture.ImageView);
@@ -1303,7 +1299,7 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
 	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePostPSO.DSLayout);
 
 		FWriteDescriptors WriteDescriptors;
 		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "InImage", SceneColorEntry->Texture.ImageView);
@@ -1544,8 +1540,6 @@ void DoDeinit()
 	GDescriptorPool.Destroy();
 
 	GTestComputePostPSO.Destroy(GDevice.Device);
-	GTestComputePSO.Destroy(GDevice.Device);
-	GFillTexturePSO.Destroy(GDevice.Device);
 
 	GRenderTargetPool.Destroy();
 	GSwapchain.Destroy();
