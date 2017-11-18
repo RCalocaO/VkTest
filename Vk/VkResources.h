@@ -582,6 +582,27 @@ struct FShader : public IShader
 	VkShaderModule ShaderModule = VK_NULL_HANDLE;
 };
 
+struct FPSOBinding
+{
+	uint32 Index;
+	VkDescriptorType Type;
+	VkShaderStageFlags Stage;
+
+	FPSOBinding(VkShaderStageFlags InStage, uint32 InIndex, VkDescriptorType InType)
+		: Index(InIndex)
+		, Type(InType)
+		, Stage(InStage)
+	{
+	}
+
+	FPSOBinding(uint32 InIndex, VkDescriptorType InType)
+		: Index(InIndex)
+		, Type(InType)
+		, Stage(VK_SHADER_STAGE_COMPUTE_BIT)
+	{
+	}
+};
+
 struct FPSO
 {
 	FVulkanShaderCollection& Collection;
@@ -607,10 +628,6 @@ struct FPSO
 		Pipelines.swap(New);
 	}
 
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings)
-	{
-	}
-
 	virtual void Destroy(VkDevice Device)
 	{
 		if (DSLayout != VK_NULL_HANDLE)
@@ -619,10 +636,8 @@ struct FPSO
 		}
 	}
 
-	void CreateDescriptorSetLayout(VkDevice Device)
+	void CreateDescriptorSetLayout(VkDevice Device, std::vector<VkDescriptorSetLayoutBinding>& DSBindings)
 	{
-		std::vector<VkDescriptorSetLayoutBinding> DSBindings;
-		SetupLayoutBindings(DSBindings);
 		CompareAgainstReflection(DSBindings);
 
 		VkDescriptorSetLayoutCreateInfo Info;
@@ -677,7 +692,7 @@ struct FGfxPSO : public FPSO
 
 	virtual void Destroy(VkDevice Device) override;
 
-	bool CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS);
+	bool CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS, const std::vector<FPSOBinding>& PSOBindings);
 
 	inline void AddBinding(std::vector<VkDescriptorSetLayoutBinding>& OutBindings, VkShaderStageFlags Stage, int32 Binding, VkDescriptorType DescType, uint32 NumDescriptors = 1)
 	{
@@ -776,7 +791,7 @@ struct FComputePSO : public FPSO
 
 	virtual void Destroy(VkDevice Device) override;
 
-	bool Create(VkDevice Device, FShaderHandle InCS);
+	bool Create(VkDevice Device, FShaderHandle InCS, const std::vector<FPSOBinding>& PSOBindings);
 
 	inline void AddBinding(std::vector<VkDescriptorSetLayoutBinding>& OutBindings, int32 Binding, VkDescriptorType DescType, uint32 NumDescriptors = 1)
 	{
@@ -903,6 +918,12 @@ public:
 			Entries.Used.push_back(NewSet);
 			return NewSet;
 		}
+	}
+
+	inline FDescriptorSet* AllocateDescriptorSet(FBasePipeline* Pipeline)
+	{
+		check(Pipeline && Pipeline->PSO);
+		return AllocateDescriptorSet(Pipeline->PSO->DSLayout);
 	}
 
 	void UpdateDescriptors(FWriteDescriptors& InWriteDescriptors);
@@ -1587,19 +1608,17 @@ struct FVulkanShaderCollection : FShaderCollection
 		}
 	}
 
-	template <typename TPSOType>
-	void RegisterGfxPSO(const char* Name, FShaderHandle VertexHandle, FShaderHandle PixelHandle)
+	void RegisterGfxPSO(const char* Name, FShaderHandle VertexHandle, FShaderHandle PixelHandle, const std::vector<FPSOBinding>& PSOBindings)
 	{
-		TPSOType* Pipeline = new TPSOType;
-		Pipeline->CreateVSPS(Device, VertexHandle, PixelHandle);
+		FGfxPSO* Pipeline = new FGfxPSO(*this);
+		Pipeline->CreateVSPS(Device, VertexHandle, PixelHandle, PSOBindings);
 		FShaderCollection::RegisterGfxPSO(Name, Pipeline, GetVulkanShader(VertexHandle), GetVulkanShader(PixelHandle));
 	}
 
-	template <typename TPSOType>
-	void RegisterComputePSO(const char* Name, FShaderHandle ComputeHandle)
+	void RegisterComputePSO(const char* Name, FShaderHandle ComputeHandle, const std::vector<FPSOBinding>& PSOBindings)
 	{
-		TPSOType* Pipeline = new TPSOType;
-		Pipeline->Create(Device, ComputeHandle);
+		FComputePSO* Pipeline = new FComputePSO(*this);
+		Pipeline->Create(Device, ComputeHandle, PSOBindings);
 		FShaderCollection::RegisterComputePSO(Name, Pipeline, GetVulkanShader(ComputeHandle));
 	}
 

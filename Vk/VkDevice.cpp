@@ -898,13 +898,19 @@ void FComputePSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>
 	OutShaderStages.push_back(Info);
 }
 
-bool FGfxPSO::CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS)
+bool FGfxPSO::CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS, const std::vector<FPSOBinding>& PSOBindings)
 {
 	VS = InVS;
 	PS = InPS;
 	((FShader*)(Collection.GetShader(VS)))->GenerateReflection(DescriptorSetInfo);
 	((FShader*)(Collection.GetShader(PS)))->GenerateReflection(DescriptorSetInfo);
-	CreateDescriptorSetLayout(Device);
+
+	std::vector<VkDescriptorSetLayoutBinding> DSBindings;
+	for (const auto& Binding : PSOBindings)
+	{
+		AddBinding(DSBindings, Binding.Stage, Binding.Index, Binding.Type);
+	}
+	CreateDescriptorSetLayout(Device, DSBindings);
 	return true;
 }
 
@@ -930,12 +936,18 @@ void FGfxPSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& Ou
 	}
 }
 
-bool FComputePSO::Create(VkDevice Device, FShaderHandle InCS)
+bool FComputePSO::Create(VkDevice Device, FShaderHandle InCS, const std::vector<FPSOBinding>& PSOBindings)
 {
 	CS = InCS;
 	auto* Shader = Collection.GetVulkanShader(CS);
 	check(Shader);
 	Shader->GenerateReflection(DescriptorSetInfo);
-	CreateDescriptorSetLayout(Device);
+
+	std::vector<VkDescriptorSetLayoutBinding> DSBindings;
+	for (const auto& Binding : PSOBindings)
+	{
+		AddBinding(DSBindings, Binding.Index, Binding.Type);
+	}
+	CreateDescriptorSetLayout(Device, DSBindings);
 	return true;
 }

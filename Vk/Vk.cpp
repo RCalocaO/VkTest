@@ -371,98 +371,49 @@ FVertexFormat GPosColorUVFormat;
 
 bool GQuitting = false;
 
-struct FUnlitPSO : public FGfxPSO
+static const std::vector<FPSOBinding> GUnlitPSOBindings =
 {
-	FUnlitPSO()
-		: FGfxPSO(GShaderCollection)
-	{
-	}
-
-
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_SAMPLER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-	}
+	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_SAMPLER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
 };
 
-struct FLitPSO : public FGfxPSO
+static const std::vector<FPSOBinding> GLitPSOBindings =
 {
-	FLitPSO()
-		: FGfxPSO(GShaderCollection)
-	{
-	}
-
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-	}
+	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
 };
 
-struct FGenerateMipsPSO : public FGfxPSO
+const std::vector<FPSOBinding> GGenerateMipsPSOBindings =
 {
-	FGenerateMipsPSO()
-		: FGfxPSO(GShaderCollection)
-	{
-	}
-
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_SAMPLER);
-		AddBinding(OutBindings, VK_SHADER_STAGE_FRAGMENT_BIT, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-	}
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_SAMPLER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
 };
 
-struct FFillTexturePSO : public FComputePSO
+const std::vector<FPSOBinding> GFillTexturePSOBindings =
 {
-	FFillTexturePSO()
-		: FComputePSO(GShaderCollection)
-	{
-	}
-
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-	}
+	FPSOBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 };
 
-struct FTestPostComputePSO : public FComputePSO
+const std::vector<FPSOBinding> GTestPostComputePSOBindings =
 {
-	FTestPostComputePSO()
-		: FComputePSO(GShaderCollection)
-	{
-	}
-
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-	}
+	FPSOBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+	FPSOBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 };
-FTestPostComputePSO GTestComputePostPSO;
 
-struct FSetupFloorPSO : public FComputePSO
+const std::vector<FPSOBinding> GSetupFloorPSOBindings =
 {
-	FSetupFloorPSO()
-		: FComputePSO(GShaderCollection)
-	{
-	}
-
-	virtual void SetupLayoutBindings(std::vector<VkDescriptorSetLayoutBinding>& OutBindings) override
-	{
-		AddBinding(OutBindings, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-		AddBinding(OutBindings, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-		AddBinding(OutBindings, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-		AddBinding(OutBindings, 3, VK_DESCRIPTOR_TYPE_SAMPLER);
-		AddBinding(OutBindings, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-	}
+	FPSOBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
+	FPSOBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
+	FPSOBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+	FPSOBinding(3, VK_DESCRIPTOR_TYPE_SAMPLER),
+	FPSOBinding(4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
 };
+
 
 
 struct FObjectCache
@@ -648,12 +599,12 @@ static bool LoadShadersAndGeometry()
 
 	GShaderCollection.ReloadShaders();
 
-	GShaderCollection.RegisterComputePSO<FSetupFloorPSO>("SetupFloorPSO", CreateFloorCS);
-	GShaderCollection.RegisterGfxPSO<FGenerateMipsPSO>("GenerateMipsPSO", PassThroughVS, GenerateMipsPS);
-	GShaderCollection.RegisterGfxPSO<FUnlitPSO>("UnlitPSO", UnlitVS, UnlitPS);
-	GShaderCollection.RegisterGfxPSO<FLitPSO>("LitPSO", LitVS, LitPS);
-	check(GTestComputePostPSO.Create(GDevice.Device, TestPostCS));
-	GShaderCollection.RegisterComputePSO<FFillTexturePSO>("FillTexturePSO", FillTextureCS);
+	GShaderCollection.RegisterComputePSO("SetupFloorPSO", CreateFloorCS, GSetupFloorPSOBindings);
+	GShaderCollection.RegisterGfxPSO("GenerateMipsPSO", PassThroughVS, GenerateMipsPS, GGenerateMipsPSOBindings);
+	GShaderCollection.RegisterGfxPSO("UnlitPSO", UnlitVS, UnlitPS, GUnlitPSOBindings);
+	GShaderCollection.RegisterGfxPSO("LitPSO", LitVS, LitPS, GLitPSOBindings);
+	GShaderCollection.RegisterComputePSO("TestPostComputePSO", TestPostCS, GTestPostComputePSOBindings);
+	GShaderCollection.RegisterComputePSO("FillTexturePSO", FillTextureCS, GFillTexturePSOBindings);
 
 	// Setup Vertex Format
 	GPosColorUVFormat.AddVertexBuffer(0, sizeof(FPosColorUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
@@ -724,7 +675,7 @@ void GenerateMips(FCmdBuffer* CmdBuffer, FImage2DWithView& Image, std::vector<FI
 		Scissor.extent.height = Image.GetHeight() >> Index;
 		vkCmdSetScissor(CmdBuffer->CmdBuffer, 0, 1, &Scissor);
 
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(Pipeline->PSO->DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(Pipeline);
 		FWriteDescriptors WriteDescriptors;
 		Pipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
 		Pipeline->SetImage(WriteDescriptors, DescriptorSet, "InTexture", GTrilinearSampler, *SourceImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -755,7 +706,7 @@ void CreateAndFillTexture()
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline->Pipeline);
 	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(Pipeline->PSO->DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(Pipeline);
 
 		FWriteDescriptors WriteDescriptors;
 		Pipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", GCheckerboardTexture.ImageView);
@@ -849,7 +800,7 @@ static void FillFloor(FCmdBuffer* CmdBuffer)
 	FCreateFloorUB& CreateFloorUB = *GCreateFloorUB.GetMappedData();
 
 	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline->PSO->DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline);
 
 		FWriteDescriptors WriteDescriptors;
 		WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
@@ -1143,7 +1094,7 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 		DrawMesh(GfxCmdBuffer, GCube,
 			[&](FImage2DWithView* Image)
 		{
-			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline);
 
 			FWriteDescriptors WriteDescriptors;
 			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
@@ -1167,7 +1118,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	DrawMesh(CmdBuffer, GModel,
 		[&](FImage2DWithView* Image)
 		{
-			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
+			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline);
 
 			FWriteDescriptors WriteDescriptors;
 			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ViewUB", GViewUB);
@@ -1185,7 +1136,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 
 static void DrawFloor(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
 {
-	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline->PSO->DSLayout);
+	auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline);
 
 	FWriteDescriptors WriteDescriptors;
 	GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ViewUB", GViewUB);
@@ -1294,12 +1245,12 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 {
 	SceneColorEntry->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_GENERAL);
 	SceneColorAfterPostEntry->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_GENERAL);
-	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(&GTestComputePostPSO);
+	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("TestComputePostPSO"));
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
 	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestComputePostPSO.DSLayout);
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline);
 
 		FWriteDescriptors WriteDescriptors;
 		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "InImage", SceneColorEntry->Texture.ImageView);
@@ -1538,8 +1489,6 @@ void DoDeinit()
 	GQueryMgr.Destroy();
 
 	GDescriptorPool.Destroy();
-
-	GTestComputePostPSO.Destroy(GDevice.Device);
 
 	GRenderTargetPool.Destroy();
 	GSwapchain.Destroy();
