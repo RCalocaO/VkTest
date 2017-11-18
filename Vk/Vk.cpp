@@ -803,11 +803,11 @@ static void FillFloor(FCmdBuffer* CmdBuffer)
 		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline);
 
 		FWriteDescriptors WriteDescriptors;
-		WriteDescriptors.AddStorageBuffer(DescriptorSet, 0, GFloorIB.Buffer);
-		WriteDescriptors.AddStorageBuffer(DescriptorSet, 1, GFloorVB.Buffer);
-		WriteDescriptors.AddUniformBuffer(DescriptorSet, 2, GCreateFloorUB);
-		WriteDescriptors.AddSampler(DescriptorSet, 3, GTrilinearSampler);
-		WriteDescriptors.AddImage(DescriptorSet, 4, GTrilinearSampler, GHeightMap.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		ComputePipeline->SetStorageBuffer(WriteDescriptors, DescriptorSet, "OutIndices", GFloorIB.Buffer);
+		ComputePipeline->SetStorageBuffer(WriteDescriptors, DescriptorSet, "OutVertices", GFloorVB.Buffer);
+		ComputePipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "UB", GCreateFloorUB);
+		ComputePipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
+		ComputePipeline->SetImage(WriteDescriptors, DescriptorSet, "Heightmap", GTrilinearSampler, GHeightMap.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
@@ -1035,34 +1035,6 @@ static void DrawMesh(FCmdBuffer* CmdBuffer, FMesh& Mesh, TSetDescriptors SetDesc
 	}
 }
 
-/*
-static void DrawCube(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* CmdBuffer)
-{
-	FObjUB& ObjUB = *GObjUB.GetMappedData();
-	static float AngleDegrees = 0;
-	{
-		AngleDegrees += 360.0f / 10.0f / 60.0f;
-		AngleDegrees = fmod(AngleDegrees, 360.0f);
-	}
-	ObjUB.Obj = FMatrix4x4::GetRotationY(ToRadians(AngleDegrees));
-
-	DrawMesh(CmdBuffer, GCube,
-		[&](FImage2DWithView* Image)
-	{
-		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GTestPSO.DSLayout);
-
-		FWriteDescriptors WriteDescriptors;
-		WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-		WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, GObjUB);
-		WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-		WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
-
-		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
-	});
-}
-
-*/
 static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* GfxCmdBuffer, FCmdBuffer* TransferCmdBuffer)
 {
 	static float AngleDegrees[NUM_CUBES] = {0};
@@ -1097,10 +1069,10 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline);
 
 			FWriteDescriptors WriteDescriptors;
-			WriteDescriptors.AddUniformBuffer(DescriptorSet, 0, GViewUB);
-			WriteDescriptors.AddUniformBuffer(DescriptorSet, 1, Instance.ObjUB);
-			WriteDescriptors.AddSampler(DescriptorSet, 2, GTrilinearSampler);
-			WriteDescriptors.AddImage(DescriptorSet, 3, GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ViewUB", GViewUB);
+			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ObjUB", Instance.ObjUB.GPUBuffer);
+			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
+			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "Tex", GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 			DescriptorSet->Bind(GfxCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);

@@ -824,9 +824,11 @@ struct FBasePipeline
 
 	template <typename TStruct>
 	bool SetUniformBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FUniformBuffer<TStruct>& UB);
+	bool SetUniformBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FBuffer& Buffer);
 	bool SetSampler(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler);
 	bool SetImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler, const FImageView& ImageView, VkImageLayout Layout);
 	bool SetStorageImage(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FImageView& ImageView);
+	bool SetStorageBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FBuffer& Buffer);
 };
 
 class FDescriptorSet
@@ -1802,6 +1804,22 @@ inline bool FBasePipeline::SetUniformBuffer(FWriteDescriptors& WriteDescriptors,
 	return false;
 }
 
+inline bool FBasePipeline::SetUniformBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FBuffer& Buffer)
+{
+	auto Found = PSO->ReflectionInfo.find(Name);
+	if (Found != PSO->ReflectionInfo.end())
+	{
+		for (const FPSO::FReflection& Reflection : Found->second)
+		{
+			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer);
+			WriteDescriptors.AddUniformBuffer(DescriptorSet, Reflection.BindingIndex, Buffer);
+		}
+
+		return true;
+	}
+	return false;
+}
+
 inline bool FBasePipeline::SetSampler(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FSampler& Sampler)
 {
 	auto Found = PSO->ReflectionInfo.find(Name);
@@ -1843,6 +1861,22 @@ inline bool FBasePipeline::SetStorageImage(FWriteDescriptors& WriteDescriptors, 
 		{
 			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::StorageImage);
 			WriteDescriptors.AddStorageImage(DescriptorSet, Reflection.BindingIndex, ImageView);
+		}
+
+		return true;
+	}
+	return false;
+}
+
+inline bool FBasePipeline::SetStorageBuffer(FWriteDescriptors& WriteDescriptors, FDescriptorSet* DescriptorSet, const char* Name, const FBuffer& Buffer)
+{
+	auto Found = PSO->ReflectionInfo.find(Name);
+	if (Found != PSO->ReflectionInfo.end())
+	{
+		for (const FPSO::FReflection& Reflection : Found->second)
+		{
+			check(Reflection.Type == FDescriptorSetInfo::FBindingInfo::EType::StorageBuffer);
+			WriteDescriptors.AddStorageBuffer(DescriptorSet, Reflection.BindingIndex, Buffer);
 		}
 
 		return true;
