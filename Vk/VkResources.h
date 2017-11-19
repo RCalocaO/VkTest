@@ -263,7 +263,7 @@ struct FStagingBuffer : public FBuffer
 	FCmdBuffer* CmdBuffer = nullptr;
 	uint64 FenceCounter = 0;
 
-	void SetFence(FPrimaryCmdBuffer* InCmdBuffer)
+	void SetFence(FCmdBuffer* InCmdBuffer)
 	{
 		check(InCmdBuffer);
 		CmdBuffer = InCmdBuffer;
@@ -298,9 +298,8 @@ struct FStagingManager
 		}
 	}
 
-	FStagingBuffer* RequestUploadBuffer(uint64 Size)
+	FStagingBuffer* RequestUploadBuffer(uint64 Size, const char* InFile, int32 InLine)
 	{
-/*
 		for (auto& Entry : Entries)
 		{
 			if (Entry.bFree && Entry.Buffer->Size == Size)
@@ -311,20 +310,22 @@ struct FStagingManager
 				return Entry.Buffer;
 			}
 		}
-*/
+
 		auto* Buffer = new FStagingBuffer;
 		Buffer->Create(Device, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, MemMgr, __FILE__, __LINE__);
 		FEntry Entry;
 		Entry.Buffer = Buffer;
 		Entry.bFree = false;
+		Entry.File = InFile;
+		Entry.Line = InLine;
 		Entries.push_back(Entry);
 		return Buffer;
 	}
 
-	FStagingBuffer* RequestUploadBufferForImage(const FImage* Image)
+	FStagingBuffer* RequestUploadBufferForImage(const FImage* Image, const char* InFile, int32 InLine)
 	{
 		uint32 Size = Image->Width * Image->Height * GetFormatBitsPerPixel(Image->Format) / 8;
-		return RequestUploadBuffer(Size);
+		return RequestUploadBuffer(Size, InFile, InLine);
 	}
 
 	void Update()
@@ -345,6 +346,8 @@ struct FStagingManager
 	{
 		FStagingBuffer* Buffer = nullptr;
 		bool bFree = false;
+		const char* File = nullptr;
+		int32 Line = 0;
 	};
 	std::vector<FEntry> Entries;
 };
@@ -1496,11 +1499,11 @@ struct FOneShotCmdBuffer
 };
 
 template <typename TFillLambda>
-void MapAndFillBufferSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData)
+void MapAndFillBufferSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FBuffer* DestBuffer, TFillLambda Fill, uint32 Size, void* UserData, const char* InFile, int32 InLine)
 {
 	FOneShotCmdBuffer OneShotCmdBuffer(Device, CmdBufferMgr);
 	auto* CmdBuffer = OneShotCmdBuffer.CmdBuffer;
-	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size);
+	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size, InFile, InLine);
 	MapAndFillBufferSync(StagingBuffer, CmdBuffer, DestBuffer, Fill, Size, UserData);
 	FlushMappedBuffer(Device->Device, StagingBuffer);
 }
@@ -1530,11 +1533,11 @@ inline void MapAndFillImageSync(FStagingBuffer* StagingBuffer, FPrimaryCmdBuffer
 }
 
 template <typename TFillLambda>
-void MapAndFillImageSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FImage* DestImage, TFillLambda Fill, uint32 Size)
+void MapAndFillImageSyncOneShotCmdBuffer(FDevice* Device, FCmdBufferMgr* CmdBufferMgr, FStagingManager* StagingMgr, FImage* DestImage, TFillLambda Fill, uint32 Size, const char* InFile, int32 InLine)
 {
 	FOneShotCmdBuffer OneShotCmdBuffer(Device, CmdBufferMgr);
 	auto* CmdBuffer = OneShotCmdBuffer.CmdBuffer;
-	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size);
+	FStagingBuffer* StagingBuffer = StagingMgr->RequestUploadBuffer(Size, InFile, InLine);
 	MapAndFillImageSync(StagingBuffer, CmdBuffer, DestImage, Fill);
 	FlushMappedBuffer(Device->Device, StagingBuffer);
 }

@@ -134,12 +134,6 @@ struct FShaderCollection
 			DestroyAndDelete(PSO);
 		}
 
-		for (auto* Shader : ShadersToDestroy)
-		{
-			Shader->Destroy();
-			delete Shader;
-		}
-
 		ShadersToDestroy.clear();
 	}
 

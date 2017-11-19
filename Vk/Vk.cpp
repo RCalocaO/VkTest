@@ -732,7 +732,7 @@ void CreateAndFillTexture()
 				}
 			}
 		};
-		auto* StagingBuffer = GStagingManager.RequestUploadBufferForImage(&GHeightMap.Image);
+		auto* StagingBuffer = GStagingManager.RequestUploadBufferForImage(&GHeightMap.Image, __FILE__, __LINE__);
 		MapAndFillImageSync(StagingBuffer, CmdBuffer, &GHeightMap.Image, FillHeightMap);
 		FlushMappedBuffer(GDevice.Device, StagingBuffer);
 
@@ -767,7 +767,7 @@ void CreateAndFillTexture()
 				}
 			}
 		};
-		auto* StagingBuffer = GStagingManager.RequestUploadBufferForImage(&GGradient.Image);
+		auto* StagingBuffer = GStagingManager.RequestUploadBufferForImage(&GGradient.Image, __FILE__, __LINE__);
 		MapAndFillImageSync(StagingBuffer, CmdBuffer, &GGradient.Image, FillGradient);
 		FlushMappedBuffer(GDevice.Device, StagingBuffer);
 
@@ -1045,7 +1045,8 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 		int32 X = Index % NUM_CUBES_X;
 		auto& Instance = GCubeInstances[Index];
 
-		auto* UploadBuffer = GStagingManager.RequestUploadBuffer(Instance.ObjUB.GPUBuffer.GetSize());
+		auto* UploadBuffer = GStagingManager.RequestUploadBuffer(Instance.ObjUB.GPUBuffer.GetSize(), __FILE__, __LINE__);
+		UploadBuffer->SetFence(TransferCmdBuffer);
 		FMeshInstance::FObjUB& ObjUB = *(FMeshInstance::FObjUB*)UploadBuffer->GetMappedData();
 		//FMeshInstance::FObjUB& ObjUB = *Instance.ObjUB.GetMappedData();
 		{
@@ -1284,6 +1285,8 @@ void DoRender()
 	}
 
 	GControl = GRequestControl;
+	GGfxCmdBufferMgr.Update();
+	GStagingManager.Update();
 
 	if (GControl.DoRecompileShaders)
 	{
@@ -1464,6 +1467,8 @@ void DoDeinit()
 
 	GRenderTargetPool.Destroy();
 	GSwapchain.Destroy();
+	GGfxCmdBufferMgr.Update();
+	GTransferCmdBufferMgr.Update();
 	GStagingManager.Destroy();
 	GObjectCache.Destroy();
 	GGfxCmdBufferMgr.Destroy();

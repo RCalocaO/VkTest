@@ -99,7 +99,7 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 		{
 			memcpy(VertexData, &Vertices[MaterialIndex][0], Batch->NumVertices * sizeof(FPosColorUVVertex));
 		};
-		MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Batch->ObjVB.Buffer, FillVB, sizeof(FPosColorUVVertex) * Batch->NumVertices, this);
+		MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Batch->ObjVB.Buffer, FillVB, sizeof(FPosColorUVVertex) * Batch->NumVertices, this, __FILE__, __LINE__);
 
 		Batch->NumIndices = (uint32)Indices[MaterialIndex].size();
 		Batch->ObjIB.Create(Device->Device, Batch->NumIndices, VK_INDEX_TYPE_UINT32, MemMgr);
@@ -108,7 +108,7 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 		{
 			memcpy(IndexData, &Indices[MaterialIndex][0], Batch->NumIndices * sizeof(uint32));
 		};
-		MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Batch->ObjIB.Buffer, FillIB, sizeof(uint32) * Batch->NumIndices, this);
+		MapAndFillBufferSyncOneShotCmdBuffer(Device, CmdBufMgr, StagingMgr, &Batch->ObjIB.Buffer, FillIB, sizeof(uint32) * Batch->NumIndices, this, __FILE__, __LINE__);
 		Batch->MaterialID = (int)MaterialIndex;
 		Batches.push_back(Batch);
 	}
@@ -156,7 +156,7 @@ void FMesh::SetupTexture(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, F
 							VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
 							VK_IMAGE_ASPECT_COLOR_BIT);
 						memcpy(Data, PixelData, Size);
-					}, Size);
+					}, Size, __FILE__, __LINE__);
 				}
 				stbi_image_free(PixelData);
 				Textures[MaterialTextureName] = Image;
