@@ -66,7 +66,7 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 			{
 				bNeedsNormals = false;
 				Vertex.nx = Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 0];
-				Vertex.ny = Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 1];
+				Vertex.ny = -Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 1];
 				Vertex.nz = Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 2];
 			}
 
@@ -98,9 +98,12 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 		}
 	}
 
-	for (auto MaterialIndex : MaterialIndices)
+	std::map<uint32, std::map<uint32, std::vector<FVector3>>> TempNormals;
+
+	if (bNeedsNormals)
 	{
-		if (bNeedsNormals)
+#if 1
+		for (auto MaterialIndex : MaterialIndices)
 		{
 			for (size_t Index = 0; Index < Indices[MaterialIndex].size(); Index += 3)
 			{
@@ -113,18 +116,66 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 				FVector3 A(V0.x, V0.y, V0.z);
 				FVector3 B(V1.x, V1.y, V1.z);
 				FVector3 C(V2.x, V2.y, V2.z);
-				FVector3 AB = B - A;
+				FVector3 AB = A - B;
 				AB.Normalize();
-				FVector3 AC = C - A;
+				FVector3 AC = A - C;
 				AC.Normalize();
-				FVector3 Normal = Cross(AB, AC);
+				FVector3 Normal = Cross(AC, AB);
 				Normal.Normalize();
 				V0.nx = V1.nx = V2.nx = Normal.x;
 				V0.ny = V1.ny = V2.ny = Normal.y;
 				V0.nz = V1.nz = V2.nz = Normal.z;
 			}
 		}
+#else
+		for (auto MaterialIndex : MaterialIndices)
+		{
+			for (size_t Index = 0; Index < Indices[MaterialIndex].size(); Index += 3)
+			{
+				int VertexIndex0 = Indices[MaterialIndex][Index + 0];
+				int VertexIndex1 = Indices[MaterialIndex][Index + 1];
+				int VertexIndex2 = Indices[MaterialIndex][Index + 2];
+				FPosNormalUVVertex& V0 = Vertices[MaterialIndex][VertexIndex0];
+				FPosNormalUVVertex& V1 = Vertices[MaterialIndex][VertexIndex1];
+				FPosNormalUVVertex& V2 = Vertices[MaterialIndex][VertexIndex2];
+				FVector3 A(V0.x, V0.y, V0.z);
+				FVector3 B(V1.x, V1.y, V1.z);
+				FVector3 C(V2.x, V2.y, V2.z);
+				FVector3 AB = A - B;
+				AB.Normalize();
+				FVector3 AC = A - C;
+				AC.Normalize();
+				FVector3 Normal = Cross(AB, AC);
+				Normal.Normalize();
+				TempNormals[MaterialIndex][VertexIndex0].push_back(Normal);
+				TempNormals[MaterialIndex][VertexIndex1].push_back(Normal);
+				TempNormals[MaterialIndex][VertexIndex2].push_back(Normal);
+			}
+		}
 
+		for (auto MaterialIndex : MaterialIndices)
+		{
+			for (auto Pair : TempNormals[MaterialIndex])
+			{
+				int VertexIndex = Pair.first;
+				auto& Normals = Pair.second;
+				FVector3 Normal = FVector3::GetZero();
+				for (const FVector3& N : Normals)
+				{
+					Normal.Add(N);
+				}
+
+				Normal.Normalize();
+				Vertices[MaterialIndex][VertexIndex].nx = Normal.x;
+				Vertices[MaterialIndex][VertexIndex].ny = Normal.y;
+				Vertices[MaterialIndex][VertexIndex].nz = Normal.z;
+			}
+		}
+#endif
+	}
+
+	for (auto MaterialIndex : MaterialIndices)
+	{
 		auto* Batch = new FBatch;
 		Batch->NumVertices = (uint32)Vertices[MaterialIndex].size();
 

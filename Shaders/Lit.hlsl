@@ -19,6 +19,8 @@ struct FVSIn
 
 struct FVSOut
 {
+	float3 WorldPos : WORLDPOS;
+	float3 CameraPos : CAMERAPOS;
 	float4 Pos : SV_POSITION;
 	float2 UVs : TEXCOORD0;
 	float3 Normal : NORMAL;
@@ -151,25 +153,38 @@ FVSOut MainVS(FVSIn In)
 {
 	FVSOut Out;
 	float4 Position = mul(ObjMtx, float4(In.Position.xyz, 1.0));
+	Out.WorldPos = Position;
 	Position = mul(ViewMtx, Position);
 
 	Out.Normal = normalize(mul(ObjMtx, float4(In.Normal, 0)));
 
 	Out.UVs = In.UVs;
+	Out.CameraPos = Position;
 	Out.Pos = mul(ProjectionMtx, Position);
 	return Out;
 }
 
 SamplerState SS : register(s3);
 Texture2D Tex : register(t4);
+SamplerState SSPoint : register(s5);
+Texture2D NormalTex : register(t6);
 
 float4 MainPS(FVSOut In)
 {
-	float3 L = float3(0, 0, 1);
-	float3 V = -ViewMtx[2].xyz;
-	float3 N = In.Normal;
-	//float3 X = float3(1, 0, 0);
-	//float3 Y = float3(0, 1, 0);
+#if 1
+	return NormalTex.Sample(SSPoint, In.UVs);
+#elif 1
+	return In.Normal.xyzz;
+#elif 1
+	float3 LightPos = float3(-0.240983188, 6.91799545, -10);
+	//float3 LightPosInCamSpace = LightPos - ViewMtx[0].xyz;
+
+	//float3 PosInCamSpace = In.CameraPos;
+
+	float3 L = -normalize(LightPos/*InCamSpace*/ - In.WorldPos);
+	//float3 V = -ViewMtx[2].xyz;
+	float3 N = normalize(In.Normal);
 	float NdotL = max(0, dot(N, L));
-	return float4(NdotL.xx, 0, 1);
+	return float4(NdotL.xxx, 1);
+#endif
 }

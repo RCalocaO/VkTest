@@ -155,6 +155,7 @@ static FImage2DWithView GCheckerboardTexture;
 static FImage2DWithView GHeightMap;
 static FImage2DWithView GGradient;
 static FSampler GTrilinearSampler;
+static FSampler GPointSampler;
 static FImageCubeWithView GCubeTest;
 
 struct FRenderTargetPool
@@ -386,7 +387,9 @@ static const std::vector<FPSOBinding> GLitPSOBindings =
 	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 5, VK_DESCRIPTOR_TYPE_SAMPLER),
+	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 6, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
 };
 
 const std::vector<FPSOBinding> GGenerateMipsPSOBindings =
@@ -1009,6 +1012,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 
 	GRenderTargetPool.Create(GDevice.Device, &GMemMgr);
 	GTrilinearSampler.CreateTrilinear(GDevice.Device);
+	GPointSampler.CreatePoint(GDevice.Device);
 
 	CreateAndFillTexture();
 
@@ -1038,7 +1042,8 @@ static void DrawMesh(FCmdBuffer* CmdBuffer, FMesh& Mesh, TSetDescriptors SetDesc
 	for (auto* Batch : Mesh.Batches)
 	{
 		FImage2DWithView* Image = Batch->DiffuseTexture ? Batch->DiffuseTexture : &GGradient;
-		SetDescriptors(Image);
+		FImage2DWithView* NormalImage = Batch->BumpTexture ? Batch->BumpTexture : &GGradient;
+		SetDescriptors(Image, NormalImage);
 		CmdBind(CmdBuffer, &Batch->ObjVB);
 		CmdBind(CmdBuffer, &Batch->ObjIB);
 		vkCmdDrawIndexed(CmdBuffer->CmdBuffer, Batch->NumIndices, 1, 0, 0, 0);
@@ -1075,7 +1080,7 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 		vkCmdCopyBuffer(TransferCmdBuffer->CmdBuffer, UploadBuffer->Buffer, Instance.ObjUB.GPUBuffer.Buffer, 1, &Region);
 
 		DrawMesh(GfxCmdBuffer, GCube,
-			[&](FImage2DWithView* Image)
+			[&](FImage2DWithView* Image, FImage2DWithView* NormalImage)
 		{
 			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline);
 
@@ -1099,7 +1104,7 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 	ObjUB.Tint = FVector4(1, 1, 1, 1);
 
 	DrawMesh(CmdBuffer, GModel,
-		[&](FImage2DWithView* Image)
+		[&](FImage2DWithView* Image, FImage2DWithView* NormalImage)
 		{
 			auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(GfxPipeline);
 
@@ -1109,6 +1114,8 @@ static void DrawModel(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Cm
 			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "DataUB", GLitDataUB);
 			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
 			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "Tex", GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SSPoint", GPointSampler);
+			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "NormalTex", GPointSampler, NormalImage->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 			DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
@@ -1471,6 +1478,7 @@ void DoDeinit()
 	GLitDataUB.Destroy();
 
 	GTrilinearSampler.Destroy();
+	GPointSampler.Destroy();
 
 	GCheckerboardTexture.Destroy();
 	GHeightMap.Destroy();

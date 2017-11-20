@@ -669,7 +669,7 @@ struct FQueryMgr
 	FTimestampQuery* CurrentQuery = nullptr;
 	enum
 	{
-		NumQueries = 1024,
+		NumQueries = 8192,
 	};
 	std::vector<FTimestampQuery> Queries;
 
