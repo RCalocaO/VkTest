@@ -1613,18 +1613,52 @@ struct FVulkanShaderCollection : FShaderCollection
 		}
 	}
 
+	struct FGfxPSOInfo
+	{
+		FShaderHandle VertexHandle;
+		FShaderHandle PixelHandle;
+		std::vector<FPSOBinding> PSOBindings;
+	};
+	std::map<std::string, FGfxPSOInfo> GfxPSOInfo;
+	struct FComputePSOInfo
+	{
+		FShaderHandle ComputeHandle;
+		std::vector<FPSOBinding> PSOBindings;
+	};
+	std::map<std::string, FComputePSOInfo> ComputePSOInfo;
+
 	void RegisterGfxPSO(const char* Name, FShaderHandle VertexHandle, FShaderHandle PixelHandle, const std::vector<FPSOBinding>& PSOBindings)
 	{
-		FGfxPSO* Pipeline = new FGfxPSO(*this);
-		Pipeline->CreateVSPS(Device, VertexHandle, PixelHandle, PSOBindings);
-		FShaderCollection::RegisterGfxPSO(Name, Pipeline, GetVulkanShader(VertexHandle), GetVulkanShader(PixelHandle));
+		GfxPSOInfo[Name] = { VertexHandle, PixelHandle, PSOBindings };
+		FGfxPSO* PSO = new FGfxPSO(*this);
+		PSO->CreateVSPS(Device, VertexHandle, PixelHandle, PSOBindings);
+		FShaderCollection::RegisterGfxPSO(Name, PSO, GetVulkanShader(VertexHandle), GetVulkanShader(PixelHandle));
 	}
 
 	void RegisterComputePSO(const char* Name, FShaderHandle ComputeHandle, const std::vector<FPSOBinding>& PSOBindings)
 	{
-		FComputePSO* Pipeline = new FComputePSO(*this);
-		Pipeline->Create(Device, ComputeHandle, PSOBindings);
-		FShaderCollection::RegisterComputePSO(Name, Pipeline, GetVulkanShader(ComputeHandle));
+		ComputePSOInfo[Name] = { ComputeHandle, PSOBindings };
+		FComputePSO* PSO = new FComputePSO(*this);
+		PSO->Create(Device, ComputeHandle, PSOBindings);
+		FShaderCollection::RegisterComputePSO(Name, PSO, GetVulkanShader(ComputeHandle));
+	}
+
+	virtual bool ReloadShaders() override
+	{
+		bool bRebuild = FShaderCollection::ReloadShaders();
+		if (bRebuild)
+		{
+			for (auto Pair : GfxPSOInfo)
+			{
+				RegisterGfxPSO(Pair.first.c_str(), Pair.second.VertexHandle, Pair.second.PixelHandle, Pair.second.PSOBindings);
+			}
+
+			for (auto Pair : ComputePSOInfo)
+			{
+				RegisterComputePSO(Pair.first.c_str(), Pair.second.ComputeHandle, Pair.second.PSOBindings);
+			}
+		}
+		return bRebuild;
 	}
 
 	virtual void DestroyAndDelete(FPSO* PSO) override

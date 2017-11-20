@@ -171,5 +171,5 @@ float4 MainPS(FVSOut In)
 	//float3 X = float3(1, 0, 0);
 	//float3 Y = float3(0, 1, 0);
 	float NdotL = max(0, dot(N, L));
-	return NdotL;
+	return float4(NdotL.xx, 0, 1);
 }

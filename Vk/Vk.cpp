@@ -557,6 +557,7 @@ struct FObjectCache
 		}
 		RenderPasses.swap(decltype(RenderPasses)());
 
+/*
 		for (auto& Pair : ComputePipelines)
 		{
 			FComputePipeline* Pipeline = Pair.second;
@@ -564,8 +565,10 @@ struct FObjectCache
 			Pipeline->Destroy(Device->Device);
 			delete Pipeline;
 		}
+*/
 		ComputePipelines.swap(decltype(ComputePipelines)());
 
+/*
 		for (auto& Pair : GfxPipelines)
 		{
 			FGfxPipeline* Pipeline = Pair.second;
@@ -573,6 +576,7 @@ struct FObjectCache
 			Pipeline->Destroy(Device->Device);
 			delete Pipeline;
 		}
+*/
 		GfxPipelines.swap(decltype(GfxPipelines)());
 
 		for (auto& Entry : Framebuffers)
@@ -1300,7 +1304,10 @@ void DoRender()
 		vkDeviceWaitIdle(GDevice.Device);
 		GGfxCmdBufferMgr.Update();
 		GTransferCmdBufferMgr.Update();
-		GShaderCollection.ReloadShaders();
+		if (GShaderCollection.ReloadShaders())
+		{
+			GObjectCache.Destroy();
+		}
 	}
 
 	auto* TransferCmdBuffer = GTransferCmdBufferMgr.GetActivePrimaryCmdBuffer();

@@ -877,8 +877,8 @@ void FCmdBufferMgr::Submit(FPrimaryCmdBuffer* CmdBuffer, VkQueue Queue, std::vec
 void FGfxPSO::Destroy(VkDevice Device)
 {
 	FPSO::Destroy(Device);
-	Collection.DestroyShader(PS);
-	Collection.DestroyShader(VS);
+	//Collection.DestroyShader(PS);
+	//Collection.DestroyShader(VS);
 }
 
 void FComputePSO::Destroy(VkDevice Device)

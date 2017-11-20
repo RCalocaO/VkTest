@@ -100,7 +100,7 @@ struct FShaderCollection
 
 	std::vector<IShader*> ShadersToDestroy;
 
-	void ReloadShaders()
+	virtual bool ReloadShaders()
 	{
 		check(ShadersToDestroy.empty());
 
@@ -116,10 +116,10 @@ struct FShaderCollection
 			}
 		}
 
-		ProcessPendingDeletions();
+		return ProcessPendingDeletions();
 	}
 
-	void ProcessPendingDeletions()
+	bool ProcessPendingDeletions()
 	{
 		// Gather Pipelines
 		std::set<FPSO*> PSOsToDestroy;
@@ -136,7 +136,9 @@ struct FShaderCollection
 			DestroyAndDelete(PSO);
 		}
 
+		bool bDeleted = !ShadersToDestroy.empty();
 		ShadersToDestroy.clear();
+		return bDeleted;
 	}
 
 	IShader* GetShader(FShaderHandle Handle)
