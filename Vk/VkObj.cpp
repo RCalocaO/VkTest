@@ -25,6 +25,16 @@ namespace std
 			return Alias[0] ^ (Alias[1] >> 1) ^ (Alias[2] << 1) ^ Alias[3] ^ (Alias[4] >> 1) ^ (Alias[5] << 1); //((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
 		}
 	};
+
+	template<> struct hash<FPosNormalUVVertex>
+	{
+		size_t operator()(FPosNormalUVVertex const& Vertex) const
+		{
+			static_assert(sizeof(Vertex) == 8 * 4, "");
+			uint32* Alias = (uint32*)&Vertex;
+			return Alias[0] ^ (Alias[1] >> 1) ^ (Alias[2] << 1) ^ Alias[3] ^ (Alias[4] >> 1) ^ (Alias[5] << 1) ^ Alias[6] ^ Alias[7];
+		}
+	};
 }
 
 
@@ -37,27 +47,27 @@ struct FTinyObj
 
 void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, FStagingManager* StagingMgr, FMemManager* MemMgr)
 {
-	std::unordered_map<FPosColorUVVertex, uint32> uniqueVertices;
-	std::map<uint32, std::vector<FPosColorUVVertex>> Vertices;
+	std::unordered_map<FPosNormalUVVertex, uint32> uniqueVertices;
+	std::map<uint32, std::vector<FPosNormalUVVertex>> Vertices;
 	std::map<uint32, std::vector<uint32>> Indices;
 	std::set<uint32> MaterialIndices;
+	bool bNeedsNormals = true;
 	for (auto& Shape : Obj->Loaded->shapes)
 	{
+		check(!(Shape.mesh.indices.size() % 3));
 		for (size_t i = 0; i < Shape.mesh.indices.size(); ++i)
 		{
 			auto MeshIndex = Shape.mesh.indices[i];
-			FPosColorUVVertex Vertex;
+			FPosNormalUVVertex Vertex;
 			Vertex.x = Obj->Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 0];
 			Vertex.y = -Obj->Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 1];
 			Vertex.z = Obj->Loaded->attrib.vertices[3 * MeshIndex.vertex_index + 2];
 			if (MeshIndex.normal_index != -1)
 			{
-				Vertex.Color = PackNormalToU32(
-					FVector3({
-					Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 0],
-					Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 1],
-					Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 2] })
-					);
+				bNeedsNormals = false;
+				Vertex.nx = Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 0];
+				Vertex.ny = Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 1];
+				Vertex.nz = Obj->Loaded->attrib.normals[3 * MeshIndex.normal_index + 2];
 			}
 
 			if (MeshIndex.texcoord_index != -1)
@@ -90,6 +100,31 @@ void FMesh::CreateFromObj(FObj* Obj, FDevice* Device, FCmdBufferMgr* CmdBufMgr, 
 
 	for (auto MaterialIndex : MaterialIndices)
 	{
+		if (bNeedsNormals)
+		{
+			for (size_t Index = 0; Index < Indices[MaterialIndex].size(); Index += 3)
+			{
+				int VertexIndex0 = Indices[MaterialIndex][Index + 0];
+				int VertexIndex1 = Indices[MaterialIndex][Index + 1];
+				int VertexIndex2 = Indices[MaterialIndex][Index + 2];
+				FPosNormalUVVertex& V0 = Vertices[MaterialIndex][VertexIndex0];
+				FPosNormalUVVertex& V1 = Vertices[MaterialIndex][VertexIndex1];
+				FPosNormalUVVertex& V2 = Vertices[MaterialIndex][VertexIndex2];
+				FVector3 A(V0.x, V0.y, V0.z);
+				FVector3 B(V1.x, V1.y, V1.z);
+				FVector3 C(V2.x, V2.y, V2.z);
+				FVector3 AB = B - A;
+				AB.Normalize();
+				FVector3 AC = C - A;
+				AC.Normalize();
+				FVector3 Normal = Cross(AB, AC);
+				Normal.Normalize();
+				V0.nx = V1.nx = V2.nx = Normal.x;
+				V0.ny = V1.ny = V2.ny = Normal.y;
+				V0.nz = V1.nz = V2.nz = Normal.z;
+			}
+		}
+
 		auto* Batch = new FBatch;
 		Batch->NumVertices = (uint32)Vertices[MaterialIndex].size();
 

@@ -115,6 +115,8 @@ struct FShaderCollection
 				DoCompileFromBinary(ShaderInfo);
 			}
 		}
+
+		ProcessPendingDeletions();
 	}
 
 	void ProcessPendingDeletions()

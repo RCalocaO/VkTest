@@ -189,6 +189,27 @@ struct FVector3
 		Set(InX, InY, InZ);
 	}
 
+	float GetSquaredLength() const
+	{
+		return x * x + y * y + z * z;
+	}
+
+	float GetLength() const
+	{
+		return sqrtf(GetSquaredLength());
+	}
+
+	void Normalize()
+	{
+		float Length = GetLength();
+		if (Length != 0)
+		{
+			x *= 1.0f / Length;
+			y *= 1.0f / Length;
+			z *= 1.0f / Length;
+		}
+	}
+
 	friend FVector3 operator- (const FVector3& A, const FVector3& B)
 	{
 		return FVector3(A.x - B.x, A.y - B.y, A.z - B.z);

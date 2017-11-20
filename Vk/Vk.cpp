@@ -368,6 +368,7 @@ FThread GThread;
 #endif
 
 FVertexFormat GPosColorUVFormat;
+FVertexFormat GPosNormalUVFormat;
 
 bool GQuitting = false;
 
@@ -611,6 +612,11 @@ static bool LoadShadersAndGeometry()
 	GPosColorUVFormat.AddVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(FPosColorUVVertex, x));
 	GPosColorUVFormat.AddVertexAttribute(0, 1, VK_FORMAT_R8G8B8A8_UNORM, offsetof(FPosColorUVVertex, Color));
 	GPosColorUVFormat.AddVertexAttribute(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(FPosColorUVVertex, u));
+
+	GPosNormalUVFormat.AddVertexBuffer(0, sizeof(FPosNormalUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
+	GPosNormalUVFormat.AddVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(FPosNormalUVVertex, x));
+	GPosNormalUVFormat.AddVertexAttribute(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(FPosNormalUVVertex, nx));
+	GPosNormalUVFormat.AddVertexAttribute(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(FPosNormalUVVertex, u));
 
 	// Load and fill geometry
 //	if (!GCube.Load("../Meshes/testcube/testcube.obj"))
@@ -1177,7 +1183,7 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 	}
 	else
 	{
-		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("LitPSO"), &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
+		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("LitPSO"), &GPosNormalUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
 		vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 		SetDynamicStates(GfxCmdBuffer->CmdBuffer, Width, Height);
 		DrawModel(GfxPipeline, Device, GfxCmdBuffer);

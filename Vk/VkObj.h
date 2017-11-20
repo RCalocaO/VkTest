@@ -26,6 +26,25 @@ struct FPosColorUVVertex
 	}
 };
 
+struct FPosNormalUVVertex
+{
+	float x, y, z;
+	float nx, ny, nz;
+	float u, v;
+
+	inline bool operator == (const FPosNormalUVVertex& A) const
+	{
+		return A.x == x &&
+			A.y == y &&
+			A.z == z &&
+			A.nx == nx &&
+			A.ny == ny &&
+			A.nz == nz &&
+			A.u == u &&
+			A.v == v;
+	}
+};
+
 struct FTinyObj;
 
 struct FObj

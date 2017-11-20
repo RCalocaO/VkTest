@@ -13,18 +13,19 @@ cbuffer ObjUB : register(b1)
 struct FVSIn
 {
 	float3 Position : POSITION;
-	float4 Color : COLOR;
+	float3 Normal : NORMAL;
 	float2 UVs : TEXCOORD0;
 };
 
 struct FVSOut
 {
 	float4 Pos : SV_POSITION;
-	float4 Color : COLOR;
 	float2 UVs : TEXCOORD0;
 	float3 Normal : NORMAL;
 };
 
+#if 0
+// https://github.com/wdas/brdf/blob/master/src/brdfs/disney.brdf
 
 cbuffer DataUB : register(b2)
 {
@@ -144,7 +145,7 @@ float3 BRDF( float3 L, float3 V, float3 N, float3 X, float3 Y )
 		* (1-metallic)
 		+ Gs*Fs*Ds + .25*clearcoat*Gr*Fr*Dr;
 }
-
+#endif
 
 FVSOut MainVS(FVSIn In)
 {
@@ -152,10 +153,9 @@ FVSOut MainVS(FVSIn In)
 	float4 Position = mul(ObjMtx, float4(In.Position.xyz, 1.0));
 	Position = mul(ViewMtx, Position);
 
-	Out.Normal = normalize(Position.xyz);
+	Out.Normal = normalize(mul(ObjMtx, float4(In.Normal, 0)));
 
 	Out.UVs = In.UVs;
-	Out.Color = In.Color * Tint;
 	Out.Pos = mul(ProjectionMtx, Position);
 	return Out;
 }
@@ -165,12 +165,11 @@ Texture2D Tex : register(t4);
 
 float4 MainPS(FVSOut In)
 {
-	float3 L = float3(0, 0, -1);
-	float3 V = -ViewMtx[3].xyz;
+	float3 L = float3(0, 0, 1);
+	float3 V = -ViewMtx[2].xyz;
 	float3 N = In.Normal;
-	float3 X = float3(1, 0, 0);
-	float3 Y = float3(0, 1, 0);
-	return float4(
-		0, BRDF(L, V, N, X, Y).xy,
-		1);
+	//float3 X = float3(1, 0, 0);
+	//float3 Y = float3(0, 1, 0);
+	float NdotL = max(0, dot(N, L));
+	return NdotL;
 }
