@@ -1176,12 +1176,15 @@ static void InternalRenderFrame(VkDevice Device, FRenderPass* RenderPass, FCmdBu
 {
 	if (GModelName.empty())
 	{
-		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("UnlitPSO"), &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
-		vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
+		auto* FloorPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("UnlitPSO"), &GPosColorUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
+		vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, FloorPipeline->Pipeline);
 
 		SetDynamicStates(GfxCmdBuffer->CmdBuffer, Width, Height);
 
-		DrawFloor(GfxPipeline, Device, GfxCmdBuffer);
+		DrawFloor(FloorPipeline, Device, GfxCmdBuffer);
+
+		auto* GfxPipeline = GObjectCache.GetOrCreateGfxPipeline(GShaderCollection.GetGfxPSO("LitPSO"), &GPosNormalUVFormat, Width, Height, RenderPass, GControl.ViewMode == EViewMode::Wireframe);
+		vkCmdBindPipeline(GfxCmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline->Pipeline);
 		//DrawCube(GfxPipeline, Device, CmdBuffer);
 		DrawCubes(GfxPipeline, Device, GfxCmdBuffer, TransferCmdBuffer);
 	}
