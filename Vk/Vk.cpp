@@ -557,6 +557,7 @@ static bool LoadShadersAndGeometry()
 	FShaderHandle TestPostCS = GShaderCollection.Register("../Shaders/TestPostCS.hlsl", EShaderStage::Compute, "Main");
 	FShaderHandle FillTextureCS = GShaderCollection.Register("../Shaders/FillTextureCS.hlsl", EShaderStage::Compute, "Main");
 	FShaderHandle GenerateMipsPS = GShaderCollection.Register("../Shaders/GenerateMipsPS.hlsl", EShaderStage::Pixel, "Main");
+	FShaderHandle UICS = GShaderCollection.Register("../Shaders/UICS.hlsl", EShaderStage::Compute, "Main");
 
 	GShaderCollection.ReloadShaders();
 
@@ -566,6 +567,7 @@ static bool LoadShadersAndGeometry()
 	GShaderCollection.RegisterGfxPSO("LitPSO", LitVS, LitPS);
 	GShaderCollection.RegisterComputePSO("TestPostComputePSO", TestPostCS);
 	GShaderCollection.RegisterComputePSO("FillTexturePSO", FillTextureCS);
+	GShaderCollection.RegisterComputePSO("UIPSO", UICS);
 
 	// Setup Vertex Format
 	GPosColorUVFormat.AddVertexBuffer(0, sizeof(FPosColorUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
@@ -1210,6 +1212,23 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 	vkCmdDispatch(CmdBuffer->CmdBuffer, SceneColorAfterPostEntry->Texture.Image.Width / 8, SceneColorAfterPostEntry->Texture.Image.Height / 8, 1);
 }
 
+void RenderUI(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntry*& SceneColorEntry)
+{
+	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("UIPSO"));
+
+	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
+	{
+		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline);
+
+		FWriteDescriptors WriteDescriptors;
+		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", SceneColorEntry->Texture.ImageView);
+		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
+		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
+	}
+
+	vkCmdDispatch(CmdBuffer->CmdBuffer, SceneColorEntry->Texture.Image.Width / 8, SceneColorEntry->Texture.Image.Height / 8, 1);
+}
+
 #if TRY_MULTITHREADED
 DWORD __stdcall FThread::ThreadFunction(void* Param)
 {
@@ -1358,6 +1377,13 @@ void DoRender()
 		RenderPost(GDevice.Device, GfxCmdBuffer, PrePost, SceneColor);
 #endif
 	}
+	else
+	{
+		SceneColor->DoTransition(GfxCmdBuffer, VK_IMAGE_LAYOUT_GENERAL);
+	}
+
+	// UI
+	RenderUI(GDevice.Device, GfxCmdBuffer, SceneColor);
 
 	// Blit post into scene color
 	GSwapchain.AcquireNextImage();
