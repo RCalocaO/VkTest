@@ -128,24 +128,30 @@ VkBool32 FInstance::DebugReportCallback(VkDebugReportFlagsEXT Flags, VkDebugRepo
 	int n = 0;
 	if (Flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
 	{
-		char s[2048];
-		sprintf_s(s, "<VK>Error[%s:%d] %s\n", LayerPrefix, MessageCode, Message);
+		char s[128];
+		sprintf_s(s, "<VK>Error[%s:%d] ", LayerPrefix, MessageCode);
 		::OutputDebugStringA(s);
+		::OutputDebugStringA(Message);
+		::OutputDebugStringA("\n");
 		check(0);
 		++n;
 	}
 	else if (Flags & VK_DEBUG_REPORT_WARNING_BIT_EXT)
 	{
-		char s[2048];
-		sprintf_s(s, "<VK>Warn: %s\n", Message);
+		char s[128];
+		sprintf_s(s, "<VK>Warn[%s:%d] ", LayerPrefix, MessageCode);
 		::OutputDebugStringA(s);
+		::OutputDebugStringA(Message);
+		::OutputDebugStringA("\n");
 		++n;
 	}
 	else if (Flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT)
 	{
-		char s[2048];
-		sprintf_s(s, "<VK>Perf: %s\n", Message);
+		char s[128];
+		sprintf_s(s, "<VK>Perf[%s:%d] ", LayerPrefix, MessageCode);
 		::OutputDebugStringA(s);
+		::OutputDebugStringA(Message);
+		::OutputDebugStringA("\n");
 		++n;
 	}
 	else if (1)
@@ -760,10 +766,62 @@ void FShader::GenerateReflection(std::map<uint32, FDescriptorSetInfo>& Descripto
 }
 
 
-void FPSO::CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& Bindings)
+void FPSO::CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& Bindings, bool bGfx)
 {
-	auto DSInfoCopy = DescriptorSetInfo;
+#if 1
+	for (auto& Sets : DescriptorSetInfo)
+	{
+		for (auto& Binding : Sets.second.Bindings)
+		{
+			auto& Entry = ReflectionInfo[Binding.second.Name];
+			FPSO::FReflection Reflection;
+			Reflection.DescriptorSetIndex = Sets.first;
+			Reflection.BindingIndex = Binding.second.BindingIndex;
+			Reflection.Type = Binding.second.Type;
+			Entry.push_back(Reflection);
+		}
+	}
 
+	for (auto Pair : this->ReflectionInfo)
+	{
+		auto& Entries = Pair.second;
+		for (auto Entry : Entries)
+		{
+			VkDescriptorSetLayoutBinding Binding;
+			MemZero(Binding);
+			Binding.binding = Entry.BindingIndex;
+			Binding.descriptorCount = 1;
+			Binding.stageFlags = bGfx ? (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT) : VK_SHADER_STAGE_COMPUTE_BIT;
+
+			switch (Entry.Type)
+			{
+			case FDescriptorSetInfo::FBindingInfo::EType::UniformBuffer:
+				Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				break;
+			case FDescriptorSetInfo::FBindingInfo::EType::StorageBuffer:
+				Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+				break;
+			case FDescriptorSetInfo::FBindingInfo::EType::CombinedSamplerImage:
+				Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				break;
+			case FDescriptorSetInfo::FBindingInfo::EType::Sampler:
+				Binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+				break;
+			case FDescriptorSetInfo::FBindingInfo::EType::SampledImage:
+				Binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+				break;
+			case FDescriptorSetInfo::FBindingInfo::EType::StorageImage:
+				Binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				break;
+			default:
+				check(0);
+				break;
+			}
+
+			Bindings.push_back(Binding);
+		}
+	}
+#else
 	//#todo: Fix to work with more than one Descriptor Set
 	check(DSInfoCopy.size() <= 1);
 	for (auto& Binding : Bindings)
@@ -811,6 +869,7 @@ void FPSO::CompareAgainstReflection(std::vector<VkDescriptorSetLayoutBinding>& B
 	}
 
 	check(DSInfoCopy[0].Bindings.empty());
+#endif
 }
 
 void FDescriptorPool::RefreshFences()
@@ -898,7 +957,7 @@ void FComputePSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>
 	OutShaderStages.push_back(Info);
 }
 
-bool FGfxPSO::CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS, const std::vector<FPSOBinding>& PSOBindings)
+bool FGfxPSO::CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS)
 {
 	VS = InVS;
 	PS = InPS;
@@ -906,11 +965,11 @@ bool FGfxPSO::CreateVSPS(VkDevice Device, FShaderHandle InVS, FShaderHandle InPS
 	((FShader*)(Collection.GetShader(PS)))->GenerateReflection(DescriptorSetInfo);
 
 	std::vector<VkDescriptorSetLayoutBinding> DSBindings;
-	for (const auto& Binding : PSOBindings)
-	{
-		AddBinding(DSBindings, Binding.Stage, Binding.Index, Binding.Type);
-	}
-	CreateDescriptorSetLayout(Device, DSBindings);
+	//for (const auto& Binding : PSOBindings)
+	//{
+	//	AddBinding(DSBindings, Binding.Stage, Binding.Index, Binding.Type);
+	//}
+	CreateDescriptorSetLayout(Device, DSBindings, true);
 	return true;
 }
 
@@ -936,7 +995,7 @@ void FGfxPSO::SetupShaderStages(std::vector<VkPipelineShaderStageCreateInfo>& Ou
 	}
 }
 
-bool FComputePSO::Create(VkDevice Device, FShaderHandle InCS, const std::vector<FPSOBinding>& PSOBindings)
+bool FComputePSO::Create(VkDevice Device, FShaderHandle InCS)
 {
 	CS = InCS;
 	auto* Shader = Collection.GetVulkanShader(CS);
@@ -944,10 +1003,10 @@ bool FComputePSO::Create(VkDevice Device, FShaderHandle InCS, const std::vector<
 	Shader->GenerateReflection(DescriptorSetInfo);
 
 	std::vector<VkDescriptorSetLayoutBinding> DSBindings;
-	for (const auto& Binding : PSOBindings)
-	{
-		AddBinding(DSBindings, Binding.Index, Binding.Type);
-	}
-	CreateDescriptorSetLayout(Device, DSBindings);
+	//for (const auto& Binding : PSOBindings)
+	//{
+	//	AddBinding(DSBindings, Binding.Index, Binding.Type);
+	//}
+	CreateDescriptorSetLayout(Device, DSBindings, false);
 	return true;
 }

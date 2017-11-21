@@ -373,53 +373,6 @@ FVertexFormat GPosNormalUVFormat;
 
 bool GQuitting = false;
 
-static const std::vector<FPSOBinding> GUnlitPSOBindings =
-{
-	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_SAMPLER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-};
-
-static const std::vector<FPSOBinding> GLitPSOBindings =
-{
-	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-	FPSOBinding(VK_SHADER_STAGE_VERTEX_BIT, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 3, VK_DESCRIPTOR_TYPE_SAMPLER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 5, VK_DESCRIPTOR_TYPE_SAMPLER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 6, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-};
-
-const std::vector<FPSOBinding> GGenerateMipsPSOBindings =
-{
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 0, VK_DESCRIPTOR_TYPE_SAMPLER),
-	FPSOBinding(VK_SHADER_STAGE_FRAGMENT_BIT, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-};
-
-const std::vector<FPSOBinding> GFillTexturePSOBindings =
-{
-	FPSOBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-};
-
-const std::vector<FPSOBinding> GTestPostComputePSOBindings =
-{
-	FPSOBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-	FPSOBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-};
-
-const std::vector<FPSOBinding> GSetupFloorPSOBindings =
-{
-	FPSOBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
-	FPSOBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
-	FPSOBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-	FPSOBinding(3, VK_DESCRIPTOR_TYPE_SAMPLER),
-	FPSOBinding(4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-};
-
-
-
 struct FObjectCache
 {
 	FDevice* Device = nullptr;
@@ -607,12 +560,12 @@ static bool LoadShadersAndGeometry()
 
 	GShaderCollection.ReloadShaders();
 
-	GShaderCollection.RegisterComputePSO("SetupFloorPSO", CreateFloorCS, GSetupFloorPSOBindings);
-	GShaderCollection.RegisterGfxPSO("GenerateMipsPSO", PassThroughVS, GenerateMipsPS, GGenerateMipsPSOBindings);
-	GShaderCollection.RegisterGfxPSO("UnlitPSO", UnlitVS, UnlitPS, GUnlitPSOBindings);
-	GShaderCollection.RegisterGfxPSO("LitPSO", LitVS, LitPS, GLitPSOBindings);
-	GShaderCollection.RegisterComputePSO("TestPostComputePSO", TestPostCS, GTestPostComputePSOBindings);
-	GShaderCollection.RegisterComputePSO("FillTexturePSO", FillTextureCS, GFillTexturePSOBindings);
+	GShaderCollection.RegisterComputePSO("SetupFloorPSO", CreateFloorCS);
+	GShaderCollection.RegisterGfxPSO("GenerateMipsPSO", PassThroughVS, GenerateMipsPS);
+	GShaderCollection.RegisterGfxPSO("UnlitPSO", UnlitVS, UnlitPS);
+	GShaderCollection.RegisterGfxPSO("LitPSO", LitVS, LitPS);
+	GShaderCollection.RegisterComputePSO("TestPostComputePSO", TestPostCS);
+	GShaderCollection.RegisterComputePSO("FillTexturePSO", FillTextureCS);
 
 	// Setup Vertex Format
 	GPosColorUVFormat.AddVertexBuffer(0, sizeof(FPosColorUVVertex), VK_VERTEX_INPUT_RATE_VERTEX);
