@@ -1042,6 +1042,8 @@ static void DrawCubes(FGfxPipeline* GfxPipeline, VkDevice Device, FCmdBuffer* Gf
 			GfxPipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "ObjUB", Instance.ObjUB.GPUBuffer);
 			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SS", GTrilinearSampler);
 			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "Tex", GTrilinearSampler, Image->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			GfxPipeline->SetSampler(WriteDescriptors, DescriptorSet, "SSPoint", GPointSampler);
+			GfxPipeline->SetImage(WriteDescriptors, DescriptorSet, "NormalTex", GPointSampler, NormalImage->ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 
 			DescriptorSet->Bind(GfxCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, GfxPipeline);
@@ -1191,7 +1193,7 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 {
 	SceneColorEntry->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_GENERAL);
 	SceneColorAfterPostEntry->DoTransition(CmdBuffer, VK_IMAGE_LAYOUT_GENERAL);
-	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("TestComputePostPSO"));
+	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("TestPostComputePSO"));
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
 
@@ -1199,7 +1201,7 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 		auto* DescriptorSet = GDescriptorPool.AllocateDescriptorSet(ComputePipeline);
 
 		FWriteDescriptors WriteDescriptors;
-		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "InImage", SceneColorEntry->Texture.ImageView);
+		ComputePipeline->SetImage(WriteDescriptors, DescriptorSet, "InImage", GPointSampler, SceneColorEntry->Texture.ImageView, VK_IMAGE_LAYOUT_GENERAL);
 		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", SceneColorAfterPostEntry->Texture.ImageView);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);

@@ -172,6 +172,8 @@ Texture2D NormalTex : register(t6);
 float4 MainPS(FVSOut In)
 {
 #if 1
+	return Tex.Sample(SSPoint, In.UVs);
+#elif 1
 	return NormalTex.Sample(SSPoint, In.UVs);
 #elif 1
 	return In.Normal.xyzz;
