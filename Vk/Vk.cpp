@@ -6,6 +6,7 @@
 #include "VkResources.h"
 #include "../Meshes/ObjLoader.h"
 #include "VkObj.h"
+#include "../Utils/External/font-16x32.c.h"
 
 #include "../Utils/External/glm/glm/vec4.hpp"
 #include "../Utils/External/glm/glm/mat4x4.hpp"
@@ -134,6 +135,27 @@ struct FObjUB
 };
 //static FUniformBuffer<FObjUB> GObjUB;
 static FUniformBuffer<FObjUB> GIdentityUB;
+
+
+struct FFontBuffer
+{
+	FBuffer Buffer;
+	void Create(VkDevice InDevice)
+	{
+		Buffer.Create(InDevice, sizeof(console_font_16x32) / 2 * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &GMemMgr, __FILE__, __LINE__);
+		auto* Memory = (uint32_t*)Buffer.GetMappedData();
+		for (size_t Index = 0; Index < sizeof(console_font_16x32); Index += 2)
+		{
+			*Memory++ = (console_font_16x32[Index + 0] << 8) + console_font_16x32[Index + 1];
+		}
+	}
+
+	void Destroy()
+	{
+		Buffer.Destroy();
+	}
+};
+static FFontBuffer GFontBuffer;
 
 struct FLitDataUB
 {
@@ -942,6 +964,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GViewUB.Create(GDevice.Device, &GMemMgr);
 	//GObjUB.Create(GDevice.Device, &GMemMgr);
 	GIdentityUB.Create(GDevice.Device, &GMemMgr);
+	GFontBuffer.Create(GDevice.Device);
 	GLitDataUB.Create(GDevice.Device, &GMemMgr);
 
 	for (uint32 Index = 0; Index < NUM_CUBES; ++Index)
@@ -1222,6 +1245,7 @@ void RenderUI(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntry*
 
 		FWriteDescriptors WriteDescriptors;
 		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", SceneColorEntry->Texture.ImageView);
+		ComputePipeline->SetStorageBuffer(WriteDescriptors, DescriptorSet, "FontBuffer", GFontBuffer.Buffer);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
@@ -1456,6 +1480,7 @@ void DoDeinit()
 	GCube.Destroy();
 	GModel.Destroy();
 	GIdentityUB.Destroy();
+	GFontBuffer.Destroy();
 	GLitDataUB.Destroy();
 
 	GTrilinearSampler.Destroy();

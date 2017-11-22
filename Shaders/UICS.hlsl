@@ -1,43 +1,57 @@
 
+StructuredBuffer<uint> FontBuffer : register(u0);
 RWTexture2D<float4> RWImage : register(u1);
 
-void DrawChar(uint Char[12], uint2 XY, uint2 Delta)
+void DrawChar(uint2 CharSize, uint CharOffset, uint2 XY, uint2 Delta)
 {
-		uint BitRow = Char[Delta.y];
-		uint ColMax = 1 << Delta.x;
-		if (ColMax & BitRow)
+		uint BitRow = FontBuffer[CharOffset + Delta.y];
+		if (BitRow != 0)
 		{
-			float4 Color = float4(1,0,0,1);
-			RWImage[XY] = Color;
+			uint ColMax = 1 << (CharSize.x - Delta.x);
+			if (ColMax & BitRow)
+			{
+				float4 Color = float4(1,0,0,1);
+				RWImage[XY] = Color;
+			}
 		}
+}
+
+void RenderString(uint2 CharStartIndex, uint2 TextPos, uint2 CharSize, uint2 GlobalInvocationID)
+{
+	int2 Delta = GlobalInvocationID - TextPos;
+	if (Delta.y >= 0 && Delta.y < CharSize.y)
+	{
+		uint TextLength = 16;
+		if (Delta.x >= 0 && Delta.x < TextLength * CharSize.x )
+		{
+			uint CharIndex = Delta.x / CharSize.x;
+			uint Char = CharStartIndex + CharIndex;
+			uint CharOffset = Char * CharSize.y;
+			Delta.x = Delta.x % CharSize.x;
+			DrawChar(CharSize, CharOffset, GlobalInvocationID, Delta);
+		}
+	}
 }
 
 [numthreads(8,8,1)]
 void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 {
-	uint A[12]=
-	{
-		0x0180, // .......11.......
-		0x0240, // ......1..1......
-		0x0660, // .....11..11.....
-		0x0C30, // ....11....11....
-		0x0810, // ....1......1....
-		0x1818, // ...11......11...
-		0x1008, // ...1........1...
-		0x1FF8, // ...1111111111...
-		0x1008, // ...1........1...
-		0x1008, // ...1........1...
-		0x300C, // ..11........11..
-		0x300C, // ..11........11..
-	};
-	uint2 CharSize = uint2(16, 12);
+	uint2 CharSize = uint2(16, 32);
 
-	uint2 TextPos = uint2(160, 100);
-
-	int2 Delta = GlobalInvocationID - TextPos;
-	if (Delta.x >= 0 && Delta.x <= CharSize.x
-		&& Delta.y >= 0 && Delta.y <= CharSize.y)
-	{
-		DrawChar(A,GlobalInvocationID, Delta);
-	}
+	uint2 TextPos = uint2(0, 100);
+	RenderString(0, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(16, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(32, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(48, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(64, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(80, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(96, TextPos, CharSize, GlobalInvocationID);
+	TextPos.y += CharSize.y;
+	RenderString(112, TextPos, CharSize, GlobalInvocationID);
 }
