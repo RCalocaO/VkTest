@@ -1,6 +1,7 @@
 // Vk.cpp
 
 #include "stdafx.h"
+#include <chrono>
 #include "Vk.h"
 #include "VkMem.h"
 #include "VkResources.h"
@@ -133,9 +134,16 @@ struct FObjUB
 	FMatrix4x4 Obj;
 	FVector4 Tint = FVector4(1, 1, 1, 1);
 };
-//static FUniformBuffer<FObjUB> GObjUB;
 static FUniformBuffer<FObjUB> GIdentityUB;
 
+struct FUIUB
+{
+	uint32 TextPosX;
+	uint32 TextPosY;
+	uint32 NumChars;
+	uint32 Chars[64];
+};
+static FUniformBuffer<FUIUB> GUIUB;
 
 struct FFontBuffer
 {
@@ -964,6 +972,7 @@ bool DoInit(HINSTANCE hInstance, HWND hWnd, uint32& Width, uint32& Height)
 	GViewUB.Create(GDevice.Device, &GMemMgr);
 	//GObjUB.Create(GDevice.Device, &GMemMgr);
 	GIdentityUB.Create(GDevice.Device, &GMemMgr);
+	GUIUB.Create(GDevice.Device, &GMemMgr);
 	GFontBuffer.Create(GDevice.Device);
 	GLitDataUB.Create(GDevice.Device, &GMemMgr);
 
@@ -1237,6 +1246,24 @@ void RenderPost(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntr
 
 void RenderUI(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntry*& SceneColorEntry)
 {
+	static auto PrevTime = std::chrono::high_resolution_clock::now();
+	auto CurrTime = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> DeltaTime = CurrTime - PrevTime;
+	PrevTime = CurrTime;
+
+	{
+		FUIUB& UIUB = *GUIUB.GetMappedData();
+		UIUB.TextPosX = 20;
+		UIUB.TextPosY = 60;
+		char s[32];
+		//sprintf(s, "GPU %.2f ms", GLastGPUTime);
+		UIUB.NumChars = (uint32)sprintf_s(s, "CPU %.2f ms", (float)DeltaTime.count());
+		for (uint32 Index = 0; Index < UIUB.NumChars; ++Index)
+		{
+			UIUB.Chars[Index] = s[Index];
+		}
+	}
+
 	auto* ComputePipeline = GObjectCache.GetOrCreateComputePipeline(GShaderCollection.GetComputePSO("UIPSO"));
 
 	vkCmdBindPipeline(CmdBuffer->CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline->Pipeline);
@@ -1246,6 +1273,7 @@ void RenderUI(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntry*
 		FWriteDescriptors WriteDescriptors;
 		ComputePipeline->SetStorageImage(WriteDescriptors, DescriptorSet, "RWImage", SceneColorEntry->Texture.ImageView);
 		ComputePipeline->SetStorageBuffer(WriteDescriptors, DescriptorSet, "FontBuffer", GFontBuffer.Buffer);
+		ComputePipeline->SetUniformBuffer(WriteDescriptors, DescriptorSet, "UIUB", GUIUB);
 		GDescriptorPool.UpdateDescriptors(WriteDescriptors);
 		DescriptorSet->Bind(CmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, ComputePipeline);
 	}
@@ -1479,6 +1507,7 @@ void DoDeinit()
 	}
 	GCube.Destroy();
 	GModel.Destroy();
+	GUIUB.Destroy();
 	GIdentityUB.Destroy();
 	GFontBuffer.Destroy();
 	GLitDataUB.Destroy();

@@ -44,10 +44,17 @@ void RenderString(uint2 CharStartIndex, uint2 TextPos, uint2 GlobalInvocationID)
 	}
 }
 
+cbuffer UIUB : register(b2)
+{
+	uint2 TextPos;
+	//uint NumChars;
+	//uint Chars[64];
+}
+
 [numthreads(8,8,1)]
 void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 {
-	uint2 TextPos = uint2(100, 100);
+//	uint2 TextPos = uint2(100, 100);
 	RenderString(48, TextPos, GlobalInvocationID);
 #if 0
 	TextPos.y += CHAR_HEIGHT;
