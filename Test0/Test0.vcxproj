@@ -151,7 +151,7 @@
   <ItemGroup>
     <ClInclude Include="..\Meshes\ObjLoader.h" />
     <ClInclude Include="..\Meshes\tiny_obj_loader.h" />
-    <ClInclude Include="..\Utils\External\font-16x32.c.h" />
+    <ClInclude Include="..\Utils\External\font-9x16.c.h" />
     <ClInclude Include="..\Utils\Shaders.h" />
     <ClInclude Include="..\Utils\stb_image.h" />
     <ClInclude Include="..\Utils\Util.h" />

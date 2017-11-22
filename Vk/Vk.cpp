@@ -6,7 +6,7 @@
 #include "VkResources.h"
 #include "../Meshes/ObjLoader.h"
 #include "VkObj.h"
-#include "../Utils/External/font-16x32.c.h"
+#include "../Utils/External/font-9x16.c.h"
 
 #include "../Utils/External/glm/glm/vec4.hpp"
 #include "../Utils/External/glm/glm/mat4x4.hpp"
@@ -142,11 +142,11 @@ struct FFontBuffer
 	FBuffer Buffer;
 	void Create(VkDevice InDevice)
 	{
-		Buffer.Create(InDevice, sizeof(console_font_16x32) / 2 * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &GMemMgr, __FILE__, __LINE__);
+		Buffer.Create(InDevice, sizeof(console_font_9x16) / 2 * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &GMemMgr, __FILE__, __LINE__);
 		auto* Memory = (uint32_t*)Buffer.GetMappedData();
-		for (size_t Index = 0; Index < sizeof(console_font_16x32); Index += 2)
+		for (size_t Index = 0; Index < sizeof(console_font_9x16); Index += 2)
 		{
-			*Memory++ = (console_font_16x32[Index + 0] << 8) + console_font_16x32[Index + 1];
+			*Memory++ = ReverseBits(((console_font_9x16[Index + 0]) << 8) + console_font_9x16[Index + 1]) >> 16;
 		}
 	}
 

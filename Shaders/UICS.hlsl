@@ -2,33 +2,44 @@
 StructuredBuffer<uint> FontBuffer : register(u0);
 RWTexture2D<float4> RWImage : register(u1);
 
-void DrawChar(uint2 CharSize, uint CharOffset, uint2 XY, uint2 Delta)
+#define CHAR_BITS_WIDTH		9
+#define CHAR_HEIGHT			16
+
+void DrawChar(uint CharOffset, uint2 XY, uint2 Delta)
 {
-		uint BitRow = FontBuffer[CharOffset + Delta.y];
-		if (BitRow != 0)
+	uint BitRow = FontBuffer[CharOffset + Delta.y];
+	if (BitRow != 0)
+	{
+		uint ColMax = 1 << Delta.x;
+		if (ColMax & BitRow)
 		{
-			uint ColMax = 1 << (CharSize.x - Delta.x);
-			if (ColMax & BitRow)
-			{
-				float4 Color = float4(1,0,0,1);
-				RWImage[XY] = Color;
-			}
+			float4 Color = float4(1,1,1,1);
+			RWImage[XY] = Color;
 		}
+		else
+		{
+//			RWImage[XY]= float4(1,0,0,1);
+		}
+	}
+	else
+	{
+//		RWImage[XY]= 0;
+	}
 }
 
-void RenderString(uint2 CharStartIndex, uint2 TextPos, uint2 CharSize, uint2 GlobalInvocationID)
+void RenderString(uint2 CharStartIndex, uint2 TextPos, uint2 GlobalInvocationID)
 {
 	int2 Delta = GlobalInvocationID - TextPos;
-	if (Delta.y >= 0 && Delta.y < CharSize.y)
+	if (Delta.y >= 0 && Delta.y < CHAR_HEIGHT)
 	{
-		uint TextLength = 16;
-		if (Delta.x >= 0 && Delta.x < TextLength * CharSize.x )
+		uint TextLength = 10;
+		if (Delta.x >= 0 && Delta.x < TextLength * CHAR_BITS_WIDTH)
 		{
-			uint CharIndex = Delta.x / CharSize.x;
+			uint CharIndex = Delta.x / CHAR_BITS_WIDTH;
 			uint Char = CharStartIndex + CharIndex;
-			uint CharOffset = Char * CharSize.y;
-			Delta.x = Delta.x % CharSize.x;
-			DrawChar(CharSize, CharOffset, GlobalInvocationID, Delta);
+			uint CharOffset = Char * CHAR_HEIGHT;
+			Delta.x = Delta.x % CHAR_BITS_WIDTH;
+			DrawChar(CharOffset, GlobalInvocationID, Delta);
 		}
 	}
 }
@@ -36,22 +47,22 @@ void RenderString(uint2 CharStartIndex, uint2 TextPos, uint2 CharSize, uint2 Glo
 [numthreads(8,8,1)]
 void Main(int3 GlobalInvocationID : SV_DispatchThreadID)
 {
-	uint2 CharSize = uint2(16, 32);
-
-	uint2 TextPos = uint2(0, 100);
-	RenderString(0, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(16, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(32, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(48, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(64, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(80, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(96, TextPos, CharSize, GlobalInvocationID);
-	TextPos.y += CharSize.y;
-	RenderString(112, TextPos, CharSize, GlobalInvocationID);
+	uint2 TextPos = uint2(100, 100);
+	RenderString(48, TextPos, GlobalInvocationID);
+#if 0
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(16, TextPos, GlobalInvocationID);
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(32, TextPos, GlobalInvocationID);
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(48, TextPos, GlobalInvocationID);
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(64, TextPos, GlobalInvocationID);
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(80, TextPos, GlobalInvocationID);
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(96, TextPos, GlobalInvocationID);
+	TextPos.y += CHAR_HEIGHT;
+	RenderString(112, TextPos, GlobalInvocationID);
+#endif
 }
