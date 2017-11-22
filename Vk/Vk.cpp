@@ -18,6 +18,7 @@ static std::string GModelName;
 extern bool GRenderDoc;
 extern bool GVkTrace;
 extern bool GValidation;
+static float GGPUTimeInMS = 0;
 
 enum
 {
@@ -141,6 +142,7 @@ struct FUIUB
 	uint32 TextPosX;
 	uint32 TextPosY;
 	uint32 NumChars;
+	uint32 Dummy;
 	uint32 Chars[64];
 };
 static FUniformBuffer<FUIUB> GUIUB;
@@ -1256,8 +1258,8 @@ void RenderUI(VkDevice Device, FCmdBuffer* CmdBuffer, FRenderTargetPool::FEntry*
 		UIUB.TextPosX = 20;
 		UIUB.TextPosY = 60;
 		char s[32];
-		//sprintf(s, "GPU %.2f ms", GLastGPUTime);
-		UIUB.NumChars = (uint32)sprintf_s(s, "CPU %.2f ms", (float)DeltaTime.count());
+		UIUB.NumChars = (uint32)sprintf_s(s, "GPU %.2f ms", GGPUTimeInMS);
+		//UIUB.NumChars = (uint32)sprintf_s(s, "CPU %.2f ms", (float)DeltaTime.count());
 		for (uint32 Index = 0; Index < UIUB.NumChars; ++Index)
 		{
 			UIUB.Chars[Index] = s[Index];
@@ -1351,13 +1353,13 @@ void DoRender()
 
 	auto* GfxCmdBuffer = GGfxCmdBufferMgr.GetActivePrimaryCmdBuffer();
 	GfxCmdBuffer->Begin();
-	float TimeInMS = GQueryMgr.ReadLastMSResult();
-	if (TimeInMS != 0.0f)
-	{
-		char Text[256];
-		sprintf_s(Text, "%.3f ms (%f FPS)", TimeInMS, (float)(1000.0f / TimeInMS));
-		::SetWindowTextA(GInstance.Window, Text);
-	}
+	GGPUTimeInMS = GQueryMgr.ReadLastMSResult();
+	//if (TimeInMS != 0.0f)
+	//{
+	//	char Text[256];
+	//	sprintf_s(Text, "%.3f ms (%f FPS)", TimeInMS, (float)(1000.0f / TimeInMS));
+	//	::SetWindowTextA(GInstance.Window, Text);
+	//}
 	GQueryMgr.BeginTime(GfxCmdBuffer);
 
 	auto* SceneColor = GRenderTargetPool.Acquire(GControl.DoMSAA ? "SceneColorMSAA" : "SceneColor", GSwapchain.GetWidth(), GSwapchain.GetHeight(), VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, GControl.DoMSAA ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
